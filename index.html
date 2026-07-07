@@ -13,9 +13,12 @@
   body { font-family:'Helvetica Neue',-apple-system,'Apple SD Gothic Neo','Noto Sans KR',sans-serif; background:var(--bg); color:var(--cream); -webkit-font-smoothing:antialiased; }
   header { display:flex; align-items:center; padding:26px 36px; }
   .wordmark { font-size:19px; font-weight:700; letter-spacing:.01em; font-family:'Helvetica Neue',Helvetica,sans-serif; }
-  header .right { margin-left:auto; display:flex; gap:18px; align-items:center; font-size:13px; color:var(--muted); }
+  header .right { margin-left:auto; display:flex; gap:16px; align-items:center; font-size:13px; color:var(--muted); }
   header button { background:none; border:none; color:var(--dim); font-size:13px; cursor:pointer; }
   header button:hover { color:var(--muted); }
+  .langtog { display:flex; gap:2px; border:1px solid var(--line); border-radius:999px; overflow:hidden; }
+  .langtog span { padding:3px 9px; font-size:11px; cursor:pointer; color:var(--dim); }
+  .langtog span.on { background:var(--panel); color:var(--cream); }
   main { max-width:960px; margin:0 auto; padding:0 28px 90px; }
   #loginPanel { min-height:calc(100vh - 90px); display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; }
   #loginPanel .logo { font-size:39px; font-weight:700; font-family:'Helvetica Neue',Helvetica,sans-serif; }
@@ -33,6 +36,7 @@
   button.primary { background:var(--panel); color:var(--cream); border:1px solid var(--line); border-radius:14px; padding:11px 26px; font-size:14.5px; font-weight:500; cursor:pointer; }
   button.primary:hover { border-color:var(--muted); }
   button.primary:disabled { opacity:.4; cursor:default; }
+  label.chk { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); cursor:pointer; }
   section { margin-top:40px; }
   section h2 { font-size:14px; font-weight:400; color:var(--muted); margin-bottom:16px; }
   .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(225px,1fr)); gap:12px; margin-top:20px; }
@@ -45,6 +49,7 @@
   .b.mode-rich { color:var(--cream); border-color:var(--muted); }
   .b.lik-hi { color:var(--ok); border-color:#3e4a38; }
   .b.lik-lo { color:var(--err); border-color:#4a332e; }
+  .tag { font-size:11px; padding:2px 8px; border-radius:999px; background:#22201b; color:var(--muted); }
   .iconid { font-size:11px; color:var(--dim); margin-top:6px; }
   .muted { color:var(--dim); font-size:13px; }
   #status { margin-top:14px; font-size:14px; min-height:20px; }
@@ -57,7 +62,11 @@
 <body>
 <header>
   <span class="wordmark hidden" id="hdrmark">Auto Tactile</span>
-  <div class="right"><span id="who"></span><button id="logoutBtn" class="hidden">로그아웃</button></div>
+  <div class="right">
+    <span id="who"></span>
+    <span class="langtog"><span id="langKo">KO</span><span id="langEn">EN</span></span>
+    <button id="logoutBtn" class="hidden" data-i18n="logout">로그아웃</button>
+  </div>
 </header>
 <main>
   <div id="loginPanel">
@@ -65,20 +74,20 @@
     <canvas class="motif" id="motif" width="0" height="0"></canvas>
     <button class="gbtn" id="googleBtn">
       <svg width="17" height="17" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.5l6.7-6.7C35.6 2.4 30.2 0 24 0 14.6 0 6.5 5.4 2.5 13.3l7.8 6.1C12.2 13.2 17.6 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4.1 7.1-10.1 7.1-17.5z"/><path fill="#FBBC05" d="M10.3 28.6a14.5 14.5 0 0 1 0-9.2l-7.8-6.1a24 24 0 0 0 0 21.4l7.8-6.1z"/><path fill="#34A853" d="M24 48c6.2 0 11.4-2 15.2-5.5l-7.5-5.8c-2.1 1.4-4.7 2.2-7.7 2.2-6.4 0-11.8-3.7-13.7-9l-7.8 6.1C6.5 42.6 14.6 48 24 48z"/></svg>
-      Google로 로그인</button>
-    <details><summary>이메일로 로그인</summary>
-      <div class="row"><input id="email" type="email" placeholder="이메일" style="width:240px"><input id="pw" type="password" placeholder="비밀번호" style="width:180px"><button class="primary" id="loginBtn">로그인</button></div>
+      <span data-i18n="google">Google로 로그인</span></button>
+    <details><summary data-i18n="emailLogin">이메일로 로그인</summary>
+      <div class="row"><input id="email" type="email" data-i18n-ph="email" placeholder="이메일" style="width:240px"><input id="pw" type="password" data-i18n-ph="pw" placeholder="비밀번호" style="width:180px"><button class="primary" id="loginBtn" data-i18n="login">로그인</button></div>
     </details>
     <div id="loginStatus"></div>
   </div>
 
   <section class="hidden" id="genPanel">
     <div class="row">
-      <input id="kw" placeholder="영어 키워드 (예: rabbit, guitar, ship)" style="width:320px">
-      <button class="primary" id="genBtn">만들기</button>
-      <button class="primary" id="randBtn" title="무작위 키워드">🎲 랜덤</button>
-      <select id="browseCat" style="min-width:120px"><option value="">카테고리 탐색…</option></select>
-      <span id="genSpin" class="hidden muted"><span class="spin"></span><span id="spinTxt">만드는 중…</span></span>
+      <input id="kw" data-i18n-ph="kw" placeholder="영어 키워드 (예: rabbit, guitar, ship)" style="width:320px">
+      <button class="primary" id="genBtn" data-i18n="create">만들기</button>
+      <button class="primary" id="randBtn" data-i18n="random">🎲 랜덤</button>
+      <select id="browseCat" style="min-width:120px"></select>
+      <span id="genSpin" class="hidden muted"><span class="spin"></span><span id="spinTxt"></span></span>
     </div>
     <div id="topicChips" class="row" style="margin-top:12px"></div>
     <div class="cards" id="cards"></div>
@@ -86,11 +95,12 @@
   </section>
 
   <section class="hidden" id="pubPanel">
-    <h2>선택한 그래픽 <span id="basketCount"></span> — 한 번에 공개</h2>
+    <h2 id="pubHead"></h2>
     <div id="basketList"></div>
     <div class="row" style="margin-top:14px">
-      <input id="tags" placeholder="공통 해시태그 (쉼표, 최대 6개)" style="width:240px">
-      <button class="primary" id="pubBtn">모두 내 계정으로 공개</button>
+      <label class="chk"><input type="checkbox" id="autoTag" checked style="width:auto"> <span data-i18n="autoTag">자동 태그</span></label>
+      <input id="tags" data-i18n-ph="tags" placeholder="공통 해시태그 (쉼표, 최대 6개)" style="width:240px">
+      <button class="primary" id="pubBtn" data-i18n="publishAll">모두 내 계정으로 공개</button>
     </div>
     <div id="status"></div>
   </section>
@@ -110,26 +120,69 @@
   }));
 })();
 
+/* ---------- i18n ---------- */
+const I18N = {
+  ko: { logout:'로그아웃', google:'Google로 로그인', emailLogin:'이메일로 로그인', email:'이메일', pw:'비밀번호',
+    login:'로그인', kw:'영어 키워드 (예: rabbit, guitar, ship)', create:'만들기', random:'🎲 랜덤',
+    browse:'카테고리 탐색…', tags:'공통 해시태그 (쉼표, 최대 6개)', autoTag:'자동 태그', publishAll:'모두 내 계정으로 공개',
+    score:'점수', likeness:'유사도', generating:'만드는 중…', noCand:'후보가 없어요. 다른 키워드를 시도해 보세요.',
+    failedN:n=>`후보 ${n}개는 실패해 제외했어요.`, pubHead:n=>`선택한 그래픽 ${n}개 — 한 번에 공개`,
+    demo:'데모 모드입니다 — 실제 공개는 로그인 후 가능합니다.', pubbing:(i,n,t)=>`공개 중… ${i}/${n} — ${t}`,
+    okMsg:(ap,ok,fail)=>(ap?`공개 완료 ${ok}개`:`검수 대기 접수 ${ok}개`)+(fail?` · 실패 ${fail}개 (목록 유지)`:'')+(ap&&ok?' — 텍타일 월드에서 확인하세요.':''),
+    gLoginFail:'Google 로그인 실패: ', loginFail:'로그인 실패: ' },
+  en: { logout:'Log out', google:'Sign in with Google', emailLogin:'Sign in with email', email:'Email', pw:'Password',
+    login:'Log in', kw:'Keyword in English (e.g. rabbit, guitar, ship)', create:'Create', random:'🎲 Random',
+    browse:'Browse category…', tags:'Shared hashtags (comma, max 6)', autoTag:'Auto tags', publishAll:'Publish all to my account',
+    score:'score', likeness:'likeness', generating:'Generating…', noCand:'No candidates. Try another keyword.',
+    failedN:n=>`${n} candidate(s) failed and were skipped.`, pubHead:n=>`${n} selected — publish together`,
+    demo:'Demo mode — sign in to publish.', pubbing:(i,n,t)=>`Publishing… ${i}/${n} — ${t}`,
+    okMsg:(ap,ok,fail)=>(ap?`Published ${ok}`:`Submitted for review: ${ok}`)+(fail?` · ${fail} failed (kept in list)`:'')+(ap&&ok?' — check it on Tactile World.':''),
+    gLoginFail:'Google sign-in failed: ', loginFail:'Sign-in failed: ' },
+};
+let lang = localStorage.getItem('at_lang') || (navigator.language.startsWith('ko') ? 'ko' : 'en');
+const t = (k, ...a) => { const v = I18N[lang][k]; return typeof v === 'function' ? v(...a) : v; };
+function applyLang() {
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-i18n]').forEach(el => el.textContent = t(el.dataset.i18n));
+  document.querySelectorAll('[data-i18n-ph]').forEach(el => el.placeholder = t(el.dataset.i18nPh));
+  $('langKo').classList.toggle('on', lang === 'ko'); $('langEn').classList.toggle('on', lang === 'en');
+  rebuildCatSelect();
+  if (basket.length) renderBasket();
+}
+
+/* ---------- app ---------- */
 const AT = window.AutoTactile;
 let sb = null, cfg = null, profile = null, topics = {}, user = null;
-let basket = [], lastCat = '기타';
+let basket = [], lastKw = '', lastCat = '기타';
 const $ = id => document.getElementById(id);
 const show = (id, on = true) => $(id).classList.toggle('hidden', !on);
 
+function rebuildCatSelect() {
+  const cur = $('browseCat').value;
+  $('browseCat').innerHTML = `<option value="">${t('browse')}</option>` +
+    Object.keys(topics).map(c => `<option>${c} (${topics[c].length})</option>`).join('');
+  $('browseCat').value = cur;
+}
+function autoTagsFor(item) {                 // 자동 태그: 영어 키워드 + 카테고리
+  const set = []; if (item.keyword) set.push(item.keyword.toLowerCase().trim());
+  if (item.cat) set.push(item.cat);
+  return [...new Set(set)].filter(Boolean);
+}
 function renderBasket() {
-  $('basketCount').textContent = basket.length ? `${basket.length}개` : '';
+  $('pubHead').textContent = t('pubHead', basket.length);
   show('pubPanel', basket.length > 0);
   const catOpts = c => AT.SITE_CATEGORIES.map(x => `<option${x === c ? ' selected' : ''}>${x}</option>`).join('');
   $('basketList').innerHTML = basket.map((b, i) => `
     <div class="row" style="margin-top:10px;padding:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px">
       <img src="${b.preview}" style="width:96px;border-radius:6px">
-      <input value="${b.title.replace(/"/g,'&quot;')}" data-i="${i}" class="bTitle" style="width:170px">
+      <input value="${b.title.replace(/"/g,'&quot;')}" data-i="${i}" class="bTitle" style="width:150px">
       <select data-i="${i}" class="bCat">${catOpts(b.cat)}</select>
-      <span class="b mode-${b.mode}">${b.mode}</span><span class="b">유사도 ${b.likeness ?? '-'}</span>
-      <button data-i="${i}" class="bDel" style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:16px">✕</button>
+      <span class="b mode-${b.mode}">${b.mode}</span>
+      ${autoTagsFor(b).map(tg => `<span class="tag">#${tg}</span>`).join('')}
+      <button data-i="${i}" class="bDel" style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:16px;margin-left:auto">✕</button>
     </div>`).join('');
   document.querySelectorAll('.bTitle').forEach(el => el.oninput = e => basket[+e.target.dataset.i].title = e.target.value);
-  document.querySelectorAll('.bCat').forEach(el => el.onchange = e => basket[+e.target.dataset.i].cat = e.target.value);
+  document.querySelectorAll('.bCat').forEach(el => el.onchange = e => { basket[+e.target.dataset.i].cat = e.target.value; renderBasket(); });
   document.querySelectorAll('.bDel').forEach(el => el.onclick = e => {
     const k = basket[+e.target.dataset.i].key; basket.splice(+e.target.dataset.i, 1);
     const card = document.querySelector(`.card[data-key="${CSS.escape(k)}"]`); if (card) card.classList.remove('sel');
@@ -142,13 +195,14 @@ async function init() {
   profile = await fetch('reference_profile.json').then(r => r.json()).catch(() => null);
   topics = await fetch('topics.json').then(r => r.json()).catch(() => ({}));
   sb = window.supabase.createClient(cfg.supabase_url, cfg.anon_key);
-  $('browseCat').innerHTML = '<option value="">카테고리 탐색…</option>' +
-    Object.keys(topics).map(c => `<option>${c} (${topics[c].length})</option>`).join('');
+  $('langKo').onclick = () => { lang = 'ko'; localStorage.setItem('at_lang', 'ko'); applyLang(); };
+  $('langEn').onclick = () => { lang = 'en'; localStorage.setItem('at_lang', 'en'); applyLang(); };
+  applyLang();
   const { data: { session } } = await sb.auth.getSession();
   if (session) { onLogin(session.user); return; }
   if (new URLSearchParams(location.search).get('demo') === '1') {
-    user = { email: 'demo (로그인 시 내 계정으로 공개)', id: null, _demo: true };
-    $('who').textContent = user.email; show('loginPanel', false); show('genPanel'); show('hdrmark');
+    user = { email: 'demo', id: null, _demo: true };
+    $('who').textContent = 'demo'; show('loginPanel', false); show('genPanel'); show('hdrmark');
   }
 }
 function onLogin(u) { user = u; $('who').textContent = u.email; show('loginPanel', false); show('genPanel'); show('logoutBtn'); show('hdrmark'); }
@@ -156,12 +210,12 @@ function onLogin(u) { user = u; $('who').textContent = u.email; show('loginPanel
 $('googleBtn').onclick = async () => {
   $('loginStatus').textContent = '';
   const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.href.split('?')[0], queryParams: { prompt: 'select_account' } } });
-  if (error) $('loginStatus').textContent = 'Google 로그인 실패: ' + error.message;
+  if (error) $('loginStatus').textContent = t('gLoginFail') + error.message;
 };
 $('loginBtn').onclick = async () => {
   $('loginStatus').textContent = '';
   const { data, error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('pw').value });
-  if (error) { $('loginStatus').textContent = '로그인 실패: ' + error.message; return; }
+  if (error) { $('loginStatus').textContent = t('loginFail') + error.message; return; }
   onLogin(data.user);
 };
 $('logoutBtn').onclick = async () => { await sb.auth.signOut(); location.reload(); };
@@ -182,47 +236,49 @@ $('browseCat').onchange = () => {
 
 $('genBtn').onclick = async () => {
   const kw = $('kw').value.trim(); if (!kw) return;
-  $('cards').innerHTML = ''; $('genNote').textContent = ''; show('genSpin'); $('genBtn').disabled = true;
+  $('cards').innerHTML = ''; $('genNote').textContent = ''; show('genSpin'); $('genBtn').disabled = true; $('spinTxt').textContent = t('generating');
   try {
-    const res = await AT.generateCandidates(kw, profile, (i, n) => { $('spinTxt').textContent = `만드는 중… ${i}/${n}`; });
+    const res = await AT.generateCandidates(kw, profile, (i, n) => { $('spinTxt').textContent = `${t('generating')} ${i}/${n}`; });
     if (res.error) { $('genNote').textContent = res.error; return; }
-    lastCat = res.suggested_category;
-    if (!res.candidates.length) { $('genNote').textContent = '후보가 없어요. 다른 키워드를 시도해 보세요.'; return; }
+    lastKw = kw; lastCat = res.suggested_category;
+    if (!res.candidates.length) { $('genNote').textContent = t('noCand'); return; }
     for (const c of res.candidates) {
       c.key = kw + '|' + c.icon;
       const div = document.createElement('div'); div.className = 'card'; div.dataset.key = c.key;
       if (basket.some(b => b.key === c.key)) div.classList.add('sel');
       const lik = c.likeness == null ? '-' : c.likeness;
       div.innerHTML = `<img src="${c.preview}"><div class="badges">
-        <span class="b mode-${c.mode}">${c.mode}</span><span class="b">점수 ${c.score}</span>
-        <span class="b ${lik >= 85 ? 'lik-hi' : (lik < 78 ? 'lik-lo' : '')}">유사도 ${lik}</span></div>
+        <span class="b mode-${c.mode}">${c.mode}</span><span class="b">${t('score')} ${c.score}</span>
+        <span class="b ${lik >= 85 ? 'lik-hi' : (lik < 78 ? 'lik-lo' : '')}">${t('likeness')} ${lik}</span></div>
         <div class="iconid">${c.icon}</div>`;
       div.onclick = () => {
         const i = basket.findIndex(b => b.key === c.key);
         if (i >= 0) { basket.splice(i, 1); div.classList.remove('sel'); }
-        else { basket.push({ key: c.key, hex: c.hex, preview: c.preview, mode: c.mode, likeness: c.likeness, title: res.suggested_title, cat: res.suggested_category }); div.classList.add('sel'); }
+        else { basket.push({ key: c.key, keyword: kw, hex: c.hex, preview: c.preview, mode: c.mode, likeness: c.likeness, title: res.suggested_title, cat: res.suggested_category }); div.classList.add('sel'); }
         $('status').textContent = ''; $('status').className = ''; renderBasket();
       };
       $('cards').appendChild(div);
     }
-    if (res.failed) $('genNote').textContent = `후보 ${res.failed}개는 실패해 제외했어요.`;
-  } finally { show('genSpin', false); $('genBtn').disabled = false; $('spinTxt').textContent = '만드는 중…'; }
+    if (res.failed) $('genNote').textContent = t('failedN', res.failed);
+  } finally { show('genSpin', false); $('genBtn').disabled = false; }
 };
 
 $('pubBtn').onclick = async () => {
   if (!basket.length || !user) return;
   const st = $('status');
-  if (user._demo) { st.className = 'err'; st.textContent = '데모 모드입니다 — 실제 공개는 로그인 후 가능합니다.'; return; }
+  if (user._demo) { st.className = 'err'; st.textContent = t('demo'); return; }
   st.className = ''; $('pubBtn').disabled = true;
   try {
     let ap = false; try { const r = await sb.rpc('should_autopublish'); ap = r.data === true; } catch (e) {}
-    const tags = $('tags').value.split(',').map(s => s.trim()).filter(Boolean).slice(0, 6);
+    const common = $('tags').value.split(',').map(s => s.trim()).filter(Boolean);
+    const useAuto = $('autoTag').checked;
     const name = (user.user_metadata && user.user_metadata.name) || user.email.split('@')[0];
     let okN = 0, failN = 0; const remain = [];
     for (let i = 0; i < basket.length; i++) {
-      const b = basket[i]; st.innerHTML = `<span class="spin"></span>공개 중… ${i + 1}/${basket.length} — ${b.title}`;
+      const b = basket[i]; st.innerHTML = `<span class="spin"></span>${t('pubbing', i + 1, basket.length, b.title)}`;
+      const tags = [...new Set([...(useAuto ? autoTagsFor(b) : []), ...common])].slice(0, 6);
       const { error } = await sb.from('graphics').insert({
-        title: b.title.trim() || '제목 없는 그래픽', category: b.cat, spec: '60×40', license: 'free', kind: 'graphic',
+        title: b.title.trim() || (lang === 'ko' ? '제목 없는 그래픽' : 'Untitled'), category: b.cat, spec: '60×40', license: 'free', kind: 'graphic',
         creator_name: name, creator_region: '🇰🇷 한국', creator_grad: 'linear-gradient(135deg,#16150F,#FF4F00)',
         tags, items: [{ label: '1쪽', data: b.hex, desc: '' }],
         status: ap ? 'published' : 'pending', submitted_by: user.id, published_at: ap ? new Date().toISOString() : null });
@@ -231,7 +287,7 @@ $('pubBtn').onclick = async () => {
     }
     basket = remain; renderBasket();
     st.className = failN ? 'err' : 'ok';
-    st.textContent = (ap ? `공개 완료 ${okN}개` : `검수 대기 접수 ${okN}개`) + (failN ? ` · 실패 ${failN}개 (목록 유지)` : '') + (ap && okN ? ' — 텍타일 월드에서 확인하세요.' : '');
+    st.textContent = t('okMsg', ap, okN, failN);
   } finally { $('pubBtn').disabled = false; }
 };
 
