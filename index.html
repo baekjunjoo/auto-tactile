@@ -57,6 +57,35 @@
   .hidden { display:none !important; }
   .spin { display:inline-block; width:13px; height:13px; border:2px solid var(--line); border-top-color:var(--cream); border-radius:50%; animation:sp 1s linear infinite; vertical-align:-2px; margin-right:7px; }
   @keyframes sp { to { transform:rotate(360deg); } }
+  img, canvas { max-width:100%; }
+
+  /* ---------- 모바일 반응형 ---------- */
+  @media (max-width:640px) {
+    header { padding:16px 18px; flex-wrap:wrap; gap:10px; }
+    header .right { gap:12px; font-size:12px; }
+    main { padding:0 16px 70px; }
+    #loginPanel { min-height:calc(100vh - 70px); }
+    #loginPanel .logo { font-size:30px; }
+    #loginPanel .motif { margin:38px 0 46px; }
+    .gbtn { padding:14px 26px; }
+    /* 인라인 고정폭 입력을 전부 풀폭으로 */
+    .row > input, .row > select { width:100% !important; }
+    #kw, #tags, #email, #pw, #browseCat { width:100% !important; }
+    .row { gap:8px; }
+    #genPanel > .row > button, #genPanel > .row > select { flex:1 1 auto; }
+    .cards { grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }
+    section { margin-top:28px; }
+    /* 바구니 행: 세로 스택 */
+    #basketList .row { align-items:stretch; }
+    #basketList .row img { width:100% !important; height:auto; max-height:150px; object-fit:contain; }
+    #basketList .bTitle, #basketList .bCat { width:100% !important; }
+    #basketList .bDel { margin-left:0 !important; align-self:flex-end; }
+    #pubPanel > .row { flex-direction:column; align-items:stretch; }
+    #pubPanel > .row #pubBtn { width:100%; }
+  }
+  @media (max-width:640px) and (hover:none) {
+    .card { padding:8px; }
+  }
 </style>
 </head>
 <body>
