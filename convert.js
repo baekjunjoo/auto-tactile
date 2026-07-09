@@ -243,7 +243,7 @@ function legibility(grid) {
     if (grid[y][x]) continue;
     const up = y > 0 && grid[y - 1][x], dn = y < h - 1 && grid[y + 1][x];
     const lf = x > 0 && grid[y][x - 1], rt = x < w - 1 && grid[y][x + 1];
-    if ((up + dn + lf + rt) >= 3 || (up && dn) || (lf && rt)) out[y][x] = 1;
+    if ((up + dn + lf + rt) >= 3) out[y][x] = 1;  // 평행선 사이 강제 채움 제거
   }
   return out;
 }
@@ -371,8 +371,10 @@ function imageToGrid(id, mode, margin = 2, holeFillMax = REF_HOLE_FILL_MAX, acce
   const fit = grayFit(gray, box, W - 2 * margin, H - 2 * margin);
   let sub;
   if (mode === 'ref') {
-    const ink = close1(ink2d(fit, otsu2d(fit)));
+    // close1을 boundary 이후로 이동: 이진화 직후 팩장으로 외곽선이 두꺼워지는 문제 방지
+    const ink = ink2d(fit, otsu2d(fit));
     let u = boundary(ink);
+    u = close1(u);  // 외곽선 추출 후 닫힌 연산으로 끊어진 선 보완
     for (const cells of holes(ink)) if (cells.length <= holeFillMax) for (const [hx, hy] of cells) u[hy][hx] = 1;
     const comps = components(ink);
     if (comps.length) {
@@ -467,7 +469,7 @@ function refLikeness(g, profile) {
 }
 
 /* ---------- convert_best (rich→ref→line) ---------- */
-const APP_TUNING = { modes_try: ['rich', 'ref', 'line'], coverage_min: 0.05, coverage_max: 0.32,
+const APP_TUNING = { modes_try: ['rich', 'ref', 'line'], coverage_min: 0.05, coverage_max: 0.22,  // 0.32→0.22: 점 과다 억제
   min_score: 55, ref_hole_fill_max: REF_HOLE_FILL_MAX, ref_accent_max: REF_ACCENT_MAX };
 function convertBest(id, profile, tuning = APP_TUNING) {
   const colorful = isColorful(id), cands = [];
