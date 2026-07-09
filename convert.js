@@ -800,5 +800,5 @@ async function generateCandidates(keyword, profile, onProgress) {
     suggested_category: siteCategory(keyword), candidates: out, failed };
 }
 
-window.AutoTactile = { generateCandidates, categorize, siteCategory, SITE_CATEGORIES, W, H, toHex };
+window.AutoTactile = { generateCandidates, categorize, siteCategory, SITE_CATEGORIES, W, H, toHex, APP_TUNING };
 })();

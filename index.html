@@ -6,6 +6,7 @@
 <title>Auto Tactile</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="convert.js"></script>
+<script src="learn.js"></script>
 <style>
   :root { --bg:#14120F; --panel:#1B1916; --line:#2C2924; --cream:#E8E3D5; --muted:#8F897B; --dim:#5C574D; --ok:#9DBE8D; --err:#D08B7E; }
   * { box-sizing:border-box; margin:0; }
@@ -234,7 +235,19 @@ async function init() {
     $('who').textContent = 'demo'; show('loginPanel', false); show('genPanel'); show('hdrmark');
   }
 }
-function onLogin(u) { user = u; $('who').textContent = u.email; show('loginPanel', false); show('genPanel'); show('logoutBtn'); show('hdrmark'); }
+function onLogin(u) {
+  user = u; $('who').textContent = u.email;
+  show('loginPanel', false); show('genPanel'); show('logoutBtn'); show('hdrmark');
+  // 로그인 시 백그라운드로 학습 실행 (캐시 24시간 유효)
+  if (window.AutoLearn) {
+    window.AutoLearn.run(sb).then(result => {
+      if (result && !result.skipped && result.profile) {
+        profile = result.profile;  // 갱신된 프로파일로 교체
+        console.log(`[learn] 프로파일 갱신: n=${result.n}, coverage ${result.tuning.coverage_min}~${result.tuning.coverage_max}`);
+      }
+    }).catch(e => console.warn('[learn] 학습 실패:', e));
+  }
+}
 
 $('googleBtn').onclick = async () => {
   $('loginStatus').textContent = '';
