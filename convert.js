@@ -585,15 +585,128 @@ async function searchCandidates(keyword, n = 10) {
   const data = await fetch(url).then(r => r.json());
   return rankCandidates(data.icons || [], n);
 }
-async function fetchIconImage(iconId) {     // → HTMLImageElement (흰배경 합성은 rasterize가)
+async function fetchIconSvg(iconId) {      // → SVG 텍스트 원문 반환
   const [prefix, name] = iconId.split(/:(.+)/);
-  let svg = await fetch(`https://api.iconify.design/${prefix}/${name}.svg?height=480`).then(r => r.text());
-  svg = svg.replace(/currentColor/g, '#000000');
+  const svg = await fetch(`https://api.iconify.design/${prefix}/${name}.svg?height=480`).then(r => r.text());
+  return svg.replace(/currentColor/g, '#000000');
+}
+async function fetchIconImage(iconId) {     // → HTMLImageElement (흰배경 합성은 rasterize가)
+  const svg = await fetchIconSvg(iconId);
   const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
   try {
     const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = url; });
     return img;
   } finally { setTimeout(() => URL.revokeObjectURL(url), 0); }
+}
+
+/* ---------- SVG 직접 파싱 → 점자 그리드 ---------- */
+function svgToGrid(svgText, margin = 2) {
+  // 1. DOM에 SVG 파싱
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(svgText, 'image/svg+xml');
+  const svgEl = doc.querySelector('svg');
+  if (!svgEl) return null;
+
+  // 2. viewBox 파악
+  const vb = (svgEl.getAttribute('viewBox') || '0 0 24 24').split(/[\s,]+/).map(Number);
+  const [vx, vy, vw, vh] = vb.length >= 4 ? vb : [0, 0, 24, 24];
+
+  // 3. 오프스크린 SVG를 실제 DOM에 붙여 getPointAtLength 사용 가능하게
+  const gw = W - 2 * margin, gh = H - 2 * margin;
+  const host = document.createElement('div');
+  host.style.cssText = 'position:absolute;visibility:hidden;width:0;height:0;overflow:hidden';
+  document.body.appendChild(host);
+
+  // SVG를 gw×gh 크기로 렌더링
+  svgEl.setAttribute('width', gw);
+  svgEl.setAttribute('height', gh);
+  host.appendChild(svgEl);
+
+  const grid = zeros(gh, gw);
+
+  // 4. 모든 path/circle/rect/ellipse/line/polyline/polygon 요소 처리
+  const shapes = host.querySelectorAll('path, circle, rect, ellipse, line, polyline, polygon');
+
+  for (const shape of shapes) {
+    // fill/stroke 판단
+    const cs = getComputedStyle(shape);
+    const hasFill = cs.fill !== 'none' && cs.fill !== 'transparent' && cs.fill !== 'rgba(0, 0, 0, 0)';
+    const hasStroke = cs.stroke !== 'none' && cs.stroke !== 'transparent' && cs.stroke !== 'rgba(0, 0, 0, 0)';
+
+    if (shape.tagName === 'path' || shape.tagName === 'polyline' || shape.tagName === 'polygon') {
+      // path: getPointAtLength로 경로를 샘플링
+      let len;
+      try { len = shape.getTotalLength(); } catch(e) { continue; }
+      if (!len || len <= 0) continue;
+
+      // 경로 샘플링 밀도: 픽셀당 2샘플
+      const steps = Math.max(100, Math.ceil(len * 2));
+      const pts = [];
+      for (let i = 0; i <= steps; i++) {
+        const pt = shape.getPointAtLength((i / steps) * len);
+        // SVG 좌표 → 그리드 좌표 변환
+        const gx = Math.round((pt.x / gw) * gw);  // 이미 gw 크기로 렌더링됨
+        const gy = Math.round((pt.y / gh) * gh);
+        if (gx >= 0 && gx < gw && gy >= 0 && gy < gh) pts.push([gx, gy]);
+      }
+
+      if (hasFill && shape.tagName === 'polygon') {
+        // polygon fill: 경계 내부를 채움 (scanline)
+        _fillPolygon(pts, grid, gw, gh);
+      } else {
+        // stroke 모드: 경로 위 점들만
+        for (const [px, py] of pts) grid[py][px] = 1;
+      }
+
+      // fill 있는 path는 내부도 채움 (닫힌 path 한정)
+      if (hasFill && shape.tagName === 'path') {
+        const d = shape.getAttribute('d') || '';
+        if (/[Zz]/.test(d)) _fillPolygon(pts, grid, gw, gh);
+      }
+
+    } else {
+      // circle/rect/ellipse/line: bbox 픽셀 채우기
+      try {
+        const bbox = shape.getBBox();
+        const x0 = Math.max(0, Math.floor(bbox.x));
+        const y0 = Math.max(0, Math.floor(bbox.y));
+        const x1 = Math.min(gw - 1, Math.ceil(bbox.x + bbox.width));
+        const y1 = Math.min(gh - 1, Math.ceil(bbox.y + bbox.height));
+        for (let py = y0; py <= y1; py++) for (let px = x0; px <= x1; px++) grid[py][px] = 1;
+      } catch(e) { /* skip */ }
+    }
+  }
+
+  host.remove();
+
+  // 5. thick_line 스타일 후처리 적용
+  const ink = grid;
+  let u = thickOutline(ink);
+  const feat = extractFeatures(ink, REF_ACCENT_MAX);
+  for (let y = 0; y < u.length; y++) for (let x = 0; x < u[0].length; x++)
+    if (feat[y][x]) u[y][x] = 1;
+  u = bridge4(u); u = dropSmall(u, 3); u = stripStray(u); u = bridge4(u);
+  u = cleanup(u);
+  return placeGrid(u, margin);
+}
+
+function _fillPolygon(pts, grid, gw, gh) {
+  // 스캔라인 채우기: pts는 경계 점 배열
+  if (pts.length < 3) return;
+  const minY = Math.max(0, Math.min(...pts.map(p => p[1])));
+  const maxY = Math.min(gh - 1, Math.max(...pts.map(p => p[1])));
+  for (let y = minY; y <= maxY; y++) {
+    const xs = [];
+    for (let i = 0; i < pts.length; i++) {
+      const [x1, y1] = pts[i], [x2, y2] = pts[(i + 1) % pts.length];
+      if ((y1 <= y && y2 > y) || (y2 <= y && y1 > y)) {
+        xs.push(Math.round(x1 + (y - y1) * (x2 - x1) / (y2 - y1)));
+      }
+    }
+    xs.sort((a, b) => a - b);
+    for (let k = 0; k + 1 < xs.length; k += 2)
+      for (let x = Math.max(0, xs[k]); x <= Math.min(gw - 1, xs[k + 1]); x++) grid[y][x] = 1;
+  }
 }
 
 /* ---------- 미리보기 (biocode 톤) ---------- */
@@ -618,9 +731,28 @@ async function generateCandidates(keyword, profile, onProgress) {
   const out = []; let failed = 0, doneN = 0;
   for (const icon of icons) {
     try {
-      const img = await fetchIconImage(icon);
-      const id = rasterize(img, 480);
-      const best = convertBest(id, profile);
+      const svgText = await fetchIconSvg(icon);
+
+      // 1차 시도: SVG 직접 파싱 (래스터화 손실 없음)
+      let best = null;
+      try {
+        const g = svgToGrid(svgText);
+        if (g) {
+          const m = gridMetrics(g), s = qualityScore(m, APP_TUNING);
+          if (s >= APP_TUNING.min_score && m.dots >= 60)
+            best = { g, mode: 'svg', s, m, likeness: refLikeness(g, profile) };
+        }
+      } catch(e) { /* SVG 파싱 실패 시 폴백 */ }
+
+      // 2차 폴백: 기존 래스터 파이프라인
+      if (!best) {
+        const url = URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml' }));
+        const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = url; });
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+        const id = rasterize(img, 480);
+        best = convertBest(id, profile);
+      }
+
       if (!best) { failed++; continue; }
       out.push({ icon, mode: best.mode, score: best.s, likeness: best.likeness,
         hex: toHex(best.g), preview: previewDataURL(best.g) });
