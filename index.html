@@ -225,6 +225,7 @@ async function init() {
   profile = await fetch('reference_profile.json').then(r => r.json()).catch(() => null);
   topics = await fetch('topics.json').then(r => r.json()).catch(() => ({}));
   sb = window.supabase.createClient(cfg.supabase_url, cfg.anon_key);
+  window._supabaseClient = sb;  // I: convert.js의 아이콘 캐시가 사용
   $('langKo').onclick = () => { lang = 'ko'; localStorage.setItem('at_lang', 'ko'); applyLang(); };
   $('langEn').onclick = () => { lang = 'en'; localStorage.setItem('at_lang', 'en'); applyLang(); };
   applyLang();
@@ -266,7 +267,11 @@ $('randBtn').onclick = () => {
   const raw = $('browseCat').value;
   const pool = raw ? (topics[raw.replace(/\s*\(\d+\)$/, '')] || []) : Object.values(topics).flat();
   if (!pool.length) return;
-  $('kw').value = pool[Math.floor(Math.random() * pool.length)]; $('genBtn').click();
+  // C: AutoLearn.pickRandom으로 최근 이력 제외
+  const kw = (window.AutoLearn && window.AutoLearn.pickRandom)
+    ? window.AutoLearn.pickRandom(pool)
+    : pool[Math.floor(Math.random() * pool.length)];
+  $('kw').value = kw; $('genBtn').click();
 };
 $('browseCat').onchange = () => {
   const raw = $('browseCat').value; if (!raw) { $('topicChips').innerHTML = ''; return; }
@@ -284,6 +289,14 @@ $('genBtn').onclick = async () => {
     if (res.error) { $('genNote').textContent = res.error; return; }
     lastKw = kw; lastCat = res.suggested_category;
     if (!res.candidates.length) { $('genNote').textContent = t('noCand'); return; }
+    // B: 노출 피드백 로깅 (비동기, 실패해도 UI 무관)
+    if (sb && user && !user._demo) {
+      const feedRows = res.candidates.map(c => ({
+        keyword: kw, icon: c.icon, mode: c.mode, score: c.score,
+        likeness: c.likeness, action: 'shown', user_id: user.id
+      }));
+      sb.from('feedback_log').insert(feedRows).then(() => {}).catch(() => {});
+    }
     for (const c of res.candidates) {
       c.key = kw + '|' + c.icon;
       const div = document.createElement('div'); div.className = 'card'; div.dataset.key = c.key;
@@ -295,8 +308,17 @@ $('genBtn').onclick = async () => {
         <div class="iconid">${c.icon}</div>`;
       div.onclick = () => {
         const i = basket.findIndex(b => b.key === c.key);
-        if (i >= 0) { basket.splice(i, 1); div.classList.remove('sel'); }
-        else { basket.push({ key: c.key, keyword: kw, hex: c.hex, preview: c.preview, mode: c.mode, likeness: c.likeness, title: res.suggested_title, cat: res.suggested_category }); div.classList.add('sel'); }
+        if (i >= 0) {
+          basket.splice(i, 1); div.classList.remove('sel');
+          // B: 거절 로깅
+          if (sb && user && !user._demo)
+            sb.from('feedback_log').insert({ keyword: kw, icon: c.icon, mode: c.mode, score: c.score, likeness: c.likeness, action: 'rejected', user_id: user.id }).then(()=>{}).catch(()=>{});
+        } else {
+          basket.push({ key: c.key, keyword: kw, hex: c.hex, preview: c.preview, mode: c.mode, likeness: c.likeness, title: res.suggested_title, cat: res.suggested_category, icon: c.icon }); div.classList.add('sel');
+          // B: 선택 로깅
+          if (sb && user && !user._demo)
+            sb.from('feedback_log').insert({ keyword: kw, icon: c.icon, mode: c.mode, score: c.score, likeness: c.likeness, action: 'selected', user_id: user.id }).then(()=>{}).catch(()=>{});
+        }
         $('status').textContent = ''; $('status').className = ''; renderBasket();
       };
       $('cards').appendChild(div);
@@ -323,6 +345,7 @@ $('pubBtn').onclick = async () => {
         title: b.title.trim() || (lang === 'ko' ? '제목 없는 그래픽' : 'Untitled'), category: b.cat, spec: '60×40', license: 'free', kind: 'graphic',
         creator_name: name, creator_region: '🇰🇷 한국', creator_grad: 'linear-gradient(135deg,#16150F,#FF4F00)',
         tags, items: [{ label: '1쪽', data: b.hex, desc: '' }],
+        icon_source: b.icon || null,
         status: ap ? 'published' : 'pending', submitted_by: user.id, published_at: ap ? new Date().toISOString() : null });
       if (error) { failN++; remain.push(b); }
       else { okN++; const card = document.querySelector(`.card[data-key="${CSS.escape(b.key)}"]`); if (card) card.classList.remove('sel'); }

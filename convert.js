@@ -512,6 +512,15 @@ function refLikeness(g, profile) {
   return Math.round(Math.max(0, 100 - 15 * total / wsum) * 10) / 10;
 }
 
+/* ---------- E: 모드별 품질 기준 ---------- */
+const MODE_TUNING = {
+  svg:        { coverage_min: 0.04, coverage_max: 0.20, min_score: 50 },  // SVG 파싱: 선 위주라 커버리지 낙음
+  rich:       { coverage_min: 0.08, coverage_max: 0.30, min_score: 55 },  // 컨러: 내부 채움 많아 커버리지 높음
+  thick_line: { coverage_min: 0.05, coverage_max: 0.22, min_score: 55 },
+  ref:        { coverage_min: 0.05, coverage_max: 0.22, min_score: 55 },
+  line:       { coverage_min: 0.04, coverage_max: 0.18, min_score: 50 },  // line: 두꺼운 윤곽만
+};
+
 /* ---------- convert_best (rich→ref→line) ---------- */
 const APP_TUNING = { modes_try: ['rich', 'thick_line', 'ref', 'line'], coverage_min: 0.05, coverage_max: 0.22,
   min_score: 55, ref_hole_fill_max: REF_HOLE_FILL_MAX, ref_accent_max: REF_ACCENT_MAX };
@@ -520,12 +529,14 @@ function convertBest(id, profile, tuning = APP_TUNING) {
   for (const mode of tuning.modes_try) {
     if (mode === 'rich' && !colorful) continue;
     let g; try { g = imageToGrid(id, mode, 2, tuning.ref_hole_fill_max, tuning.ref_accent_max); } catch (e) { continue; }
-    const m = gridMetrics(g), s = qualityScore(m, tuning);
+    // E: 모드별 품질 기준 적용
+    const modeTuning = { ...tuning, ...(MODE_TUNING[mode] || {}) };
+    const m = gridMetrics(g), s = qualityScore(m, modeTuning);
     cands.push({ g, mode, m, s, likeness: refLikeness(g, profile) });
   }
   if (!cands.length) return null;
   for (const pref of ['rich', 'thick_line', 'ref', 'line'])
-    for (const c of cands) if (c.mode === pref && c.m.dots >= 60 && c.s >= tuning.min_score) return c;
+    for (const c of cands) if (c.mode === pref && c.m.dots >= 60 && c.s >= (MODE_TUNING[c.mode]?.min_score ?? tuning.min_score)) return c;
   return cands.reduce((a, b) => (b.s > a.s ? b : a));
 }
 
@@ -745,6 +756,21 @@ function _fillPolygon(pts, grid, gw, gh) {
   }
 }
 
+/* ---------- I: hex → grid 헬퍼 (캐시 미리보기용) ---------- */
+function _hexToGrid(hex) {
+  const bytes = [];
+  for (let i = 0; i < hex.length; i += 2) bytes.push(parseInt(hex.slice(i, i + 2), 16));
+  const g = Array.from({ length: H }, () => new Array(W).fill(0));
+  for (let cr = 0; cr < 10; cr++) for (let cc = 0; cc < 30; cc++) {
+    const b = bytes[cr * 30 + cc];
+    for (let side = 0; side < 2; side++) {
+      const bits = side === 0 ? LEFT_BITS : RIGHT_BITS;
+      for (let r = 0; r < 4; r++) if (b & (1 << bits[r])) g[cr * 4 + r][cc * 2 + side] = 1;
+    }
+  }
+  return g;
+}
+
 /* ---------- 미리보기 (biocode 톤) ---------- */
 function previewDataURL(g, scale = 6, pad = 4) {
   const c = document.createElement('canvas'); c.width = W * scale + pad * 2; c.height = H * scale + pad * 2;
@@ -764,34 +790,79 @@ function previewDataURL(g, scale = 6, pad = 4) {
 async function generateCandidates(keyword, profile, onProgress) {
   const icons = await searchCandidates(keyword, 10);
   if (!icons.length) return { keyword, candidates: [], error: `'${keyword}' 아이콘을 찾지 못했어요. 영어 키워드를 권장합니다.` };
-  const out = []; let failed = 0, doneN = 0;
+  // G: 카테고리별 프로파일
+  const cat = siteCategory(keyword);
+  const activeProfile = (window.AutoLearn && window.AutoLearn.getProfileForCategory)
+    ? window.AutoLearn.getProfileForCategory(cat)
+    : profile;
+  // I: Supabase 사전 변환 캐시 조회
+  const cachedIcons = new Set();
+  const cachedResults = [];
+  if (window._supabaseClient) {
+    try {
+      const { data: cacheRows } = await window._supabaseClient
+        .from('icon_cache')
+        .select('icon_id, hex, mode, score, likeness')
+        .in('icon_id', icons)
+        .limit(icons.length);
+      if (cacheRows) {
+        for (const row of cacheRows) {
+          cachedIcons.add(row.icon_id);
+          cachedResults.push({ icon: row.icon_id, mode: row.mode, score: row.score,
+            likeness: row.likeness, hex: row.hex, preview: previewDataURL(_hexToGrid(row.hex)) });
+        }
+      }
+    } catch(e) { /* 캐시 조회 실패 시 무시 */ }
+  }
+  const out = [...cachedResults]; let failed = 0, doneN = cachedResults.length;
+  if (onProgress && doneN > 0) onProgress(doneN, icons.length);
   for (const icon of icons) {
+    if (cachedIcons.has(icon)) { if (onProgress) onProgress(++doneN, icons.length); continue; }  // I: 캐시 히트 건너뛰
     try {
       const svgText = await fetchIconSvg(icon);
 
-      // 1차 시도: SVG 직접 파싱 (래스터화 손실 없음)
-      let best = null;
+      // F: SVG 파싱 + 래스터 앙상블 — 둘 다 계산 후 더 높은 score 선택
+      let svgBest = null, rasterBest = null;
+
+      // SVG 파싱 시도
       try {
         const g = svgToGrid(svgText);
         if (g) {
-          const m = gridMetrics(g), s = qualityScore(m, APP_TUNING);
-          if (s >= APP_TUNING.min_score && m.dots >= 60)
-            best = { g, mode: 'svg', s, m, likeness: refLikeness(g, profile) };
+          const m = gridMetrics(g);
+          const svgTuning = { ...APP_TUNING, ...(MODE_TUNING.svg || {}) };
+          const s = qualityScore(m, svgTuning);
+          if (m.dots >= 60) svgBest = { g, mode: 'svg', s, m, likeness: refLikeness(g, activeProfile) };
         }
-      } catch(e) { /* SVG 파싱 실패 시 폴백 */ }
+      } catch(e) {}
 
-      // 2차 폴백: 기존 래스터 파이프라인
-      if (!best) {
+      // 래스터 파이프라인
+      try {
         const url = URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml' }));
         const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = url; });
         setTimeout(() => URL.revokeObjectURL(url), 0);
         const id = rasterize(img, 480);
-        best = convertBest(id, profile);
+        rasterBest = convertBest(id, activeProfile);
+      } catch(e) {}
+
+      // 앙상블: 둘 다 있으면 score 비교, 없으면 있는 것 사용
+      let best = null;
+      if (svgBest && rasterBest) {
+        best = svgBest.s >= rasterBest.s ? svgBest : rasterBest;
+      } else {
+        best = svgBest || rasterBest;
       }
 
       if (!best) { failed++; continue; }
+      const hexStr = toHex(best.g);
       out.push({ icon, mode: best.mode, score: best.s, likeness: best.likeness,
-        hex: toHex(best.g), preview: previewDataURL(best.g) });
+        hex: hexStr, preview: previewDataURL(best.g) });
+      // I: 새로 변환된 결과를 icon_cache에 저장 (비동기)
+      if (window._supabaseClient) {
+        window._supabaseClient.from('icon_cache').upsert({
+          icon_id: icon, hex: hexStr, mode: best.mode, score: best.s, likeness: best.likeness,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'icon_id' }).then(()=>{}).catch(()=>{});
+      }
     } catch (e) { failed++; }
     if (onProgress) onProgress(++doneN, icons.length);
   }
@@ -800,5 +871,5 @@ async function generateCandidates(keyword, profile, onProgress) {
     suggested_category: siteCategory(keyword), candidates: out, failed };
 }
 
-window.AutoTactile = { generateCandidates, categorize, siteCategory, SITE_CATEGORIES, W, H, toHex, APP_TUNING };
+window.AutoTactile = { generateCandidates, categorize, siteCategory, SITE_CATEGORIES, W, H, toHex, APP_TUNING, PREFER_PREFIXES };
 })();
