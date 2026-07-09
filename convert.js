@@ -351,6 +351,40 @@ function richSub(id, gw, gh, holeFillMax, accentMax, sc = 4) {
   return sub;
 }
 
+/* ---------- thick_line 전용 유틸 ---------- */
+function dilate1(grid) {  // 3x3 팽창 (1픽셀 확장)
+  const h = grid.length, w = grid[0].length, out = zeros(h, w);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (grid[y][x])
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const yy = y + dy, xx = x + dx;
+      if (yy >= 0 && yy < h && xx >= 0 && xx < w) out[yy][xx] = 1;
+    }
+  return out;
+}
+function thickOutline(ink) {
+  // 외부 팽창 XOR 원본 → 외부 1픽셀 윤곽
+  const outer = dilate1(ink);
+  const h = ink.length, w = ink[0].length, out = zeros(h, w);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++)
+    if (outer[y][x] && !ink[y][x]) out[y][x] = 1;  // 외부 경계
+  // 내부 1픽셀 윤곽 (boundary) 합산 → 총 2픽셀 두께
+  const inner = boundary(ink);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++)
+    if (inner[y][x]) out[y][x] = 1;
+  return out;
+}
+function extractFeatures(ink, maxSize = 60) {
+  // 독립된 작은 덩어리(눈, 코 등)를 솔리드 특징으로 보존
+  const comps = components(ink);
+  if (!comps.length) return zeros(ink.length, ink[0].length);
+  const biggest = Math.max(...comps.map(c => c.length));
+  const feat = zeros(ink.length, ink[0].length);
+  for (const c of comps)
+    if (c.length < biggest && c.length >= 3 && c.length <= maxSize)
+      for (const [x, y] of c) feat[y][x] = 1;
+  return feat;
+}
+
 /* ---------- imageToGrid ---------- */
 function placeGrid(sub, margin) {
   const g = zeros(H, W);
@@ -382,6 +416,16 @@ function imageToGrid(id, mode, margin = 2, holeFillMax = REF_HOLE_FILL_MAX, acce
       for (const c of comps) if (c.length < big && c.length <= accentMax) for (const [hx, hy] of c) u[hy][hx] = 1;
     }
     u = bridge4(u); u = dropSmall(u, 3); u = stripStray(u); u = legibility(u); u = bridge4(u);
+    sub = u;
+  } else if (mode === 'thick_line') {
+    // 2픽셀 균일 외곽선 + 독립 특징(눈, 코 등) 솔리드 보존
+    const ink = ink2d(fit, otsu2d(fit));
+    let u = thickOutline(ink);
+    // 독립된 작은 덩어리(눈, 코 등)를 솔리드로 덮어씌움
+    const feat = extractFeatures(ink, accentMax);
+    for (let y = 0; y < u.length; y++) for (let x = 0; x < u[0].length; x++)
+      if (feat[y][x]) u[y][x] = 1;
+    u = bridge4(u); u = dropSmall(u, 3); u = stripStray(u); u = bridge4(u);
     sub = u;
   } else if (mode === 'thin') {
     sub = boundary(ink2d(fit, otsu2d(fit)));
@@ -469,7 +513,7 @@ function refLikeness(g, profile) {
 }
 
 /* ---------- convert_best (rich→ref→line) ---------- */
-const APP_TUNING = { modes_try: ['rich', 'ref', 'line'], coverage_min: 0.05, coverage_max: 0.22,  // 0.32→0.22: 점 과다 억제
+const APP_TUNING = { modes_try: ['rich', 'thick_line', 'ref', 'line'], coverage_min: 0.05, coverage_max: 0.22,
   min_score: 55, ref_hole_fill_max: REF_HOLE_FILL_MAX, ref_accent_max: REF_ACCENT_MAX };
 function convertBest(id, profile, tuning = APP_TUNING) {
   const colorful = isColorful(id), cands = [];
@@ -480,7 +524,7 @@ function convertBest(id, profile, tuning = APP_TUNING) {
     cands.push({ g, mode, m, s, likeness: refLikeness(g, profile) });
   }
   if (!cands.length) return null;
-  for (const pref of ['rich', 'ref', 'line'])
+  for (const pref of ['rich', 'thick_line', 'ref', 'line'])
     for (const c of cands) if (c.mode === pref && c.m.dots >= 60 && c.s >= tuning.min_score) return c;
   return cands.reduce((a, b) => (b.s > a.s ? b : a));
 }
