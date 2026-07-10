@@ -12,7 +12,7 @@ const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 const MAX_FETCH = 1000;
 const MIN_SAMPLES = 20;
 const W = 60, H = 40;
-const LEFT_BITS = [0, 1, 2, 6], RIGHT_BITS = [3, 4, 5, 7];
+const LEFT_BITS = [0, 1, 2, 3], RIGHT_BITS = [4, 5, 6, 7];  // tactileworlds 표준
 
 function hexToGrid(hex) {
   const bytes = [];

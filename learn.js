@@ -16,7 +16,7 @@ const RAND_HIST_MAX  = 30;   // C: 최근 30개 키워드 이력
 const CACHE_TTL      = 24 * 60 * 60 * 1000;  // 24시간
 
 const W = 60, H = 40;
-const LEFT_BITS = [0, 1, 2, 6], RIGHT_BITS = [3, 4, 5, 7];
+const LEFT_BITS = [0, 1, 2, 3], RIGHT_BITS = [4, 5, 6, 7];  // tactileworlds 표준
 
 /* ---------- hex → grid ---------- */
 function hexToGrid(hex) {

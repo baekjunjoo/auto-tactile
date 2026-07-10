@@ -5,7 +5,9 @@
 (() => {
 'use strict';
 const W = 60, H = 40;
-const LEFT_BITS = [0, 1, 2, 6], RIGHT_BITS = [3, 4, 5, 7];
+// tactileworlds 표준(fn=[[0,0],[0,1],[0,2],[0,3],[1,0],[1,1],[1,2],[1,3]])와 일치
+// bit 0-3 → 왼쪽 열 row 0-3, bit 4-7 → 오른쪽 열 row 0-3
+const LEFT_BITS = [0, 1, 2, 3], RIGHT_BITS = [4, 5, 6, 7];
 const REF_HOLE_FILL_MAX = 40, REF_ACCENT_MAX = 80;
 
 /* ---------- .dtm 인코딩 ---------- */
