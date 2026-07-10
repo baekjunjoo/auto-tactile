@@ -11,8 +11,9 @@
 const MIN_SAMPLES    = 20;
 const MAX_FETCH      = 500;
 const STORAGE_KEY    = 'at_learned_v2';
-const RAND_HIST_KEY  = 'at_rand_hist';
-const RAND_HIST_MAX  = 30;   // C: 최근 30개 키워드 이력
+const RAND_HIST_KEY  = 'at_rand_hist';  // 전체 이력
+const RAND_HIST_CAT  = 'at_rand_cat';   // 카테고리별 이력
+const RAND_HIST_MAX  = 100;  // C: 최근 100개 키워드 이력 (955개 풀의 10%)
 const CACHE_TTL      = 24 * 60 * 60 * 1000;  // 24시간
 
 const W = 60, H = 40;
@@ -237,21 +238,36 @@ function _apply(cached) {
 }
 
 /* ---------- C: 랜덤 키워드 중복 방지 ---------- */
-function getRecentKeywords() {
-  try { return JSON.parse(localStorage.getItem(RAND_HIST_KEY) || '[]'); } catch (e) { return []; }
+function getRecentKeywords(catKey) {
+  const key = catKey ? `${RAND_HIST_CAT}_${catKey}` : RAND_HIST_KEY;
+  try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch (e) { return []; }
 }
-function recordKeyword(kw) {
+function recordKeyword(kw, catKey) {
+  // 전체 이력 갱신
   const hist = getRecentKeywords();
   const updated = [kw, ...hist.filter(k => k !== kw)].slice(0, RAND_HIST_MAX);
   try { localStorage.setItem(RAND_HIST_KEY, JSON.stringify(updated)); } catch (e) {}
+  // 카테고리 이력 갱신 (카테고리가 있을 때만)
+  if (catKey) {
+    const catHist = getRecentKeywords(catKey);
+    // 카테고리 이력은 pool 크기의 절반까지 저장
+    const catMax = Math.max(10, Math.floor(catHist.length * 0.8) + 5);
+    const catUpdated = [kw, ...catHist.filter(k => k !== kw)].slice(0, catMax);
+    try { localStorage.setItem(`${RAND_HIST_CAT}_${catKey}`, JSON.stringify(catUpdated)); } catch (e) {}
+  }
 }
-function pickRandom(pool) {
+function pickRandom(pool, catKey) {
   if (!pool.length) return null;
-  const recent = new Set(getRecentKeywords());
-  const fresh = pool.filter(k => !recent.has(k));
-  const source = fresh.length > 0 ? fresh : pool;  // 모두 최근이면 전체에서 선택
+  // 카테고리 이력 우선, 없으면 전체 이력 사용
+  const recentSet = new Set([
+    ...getRecentKeywords(),
+    ...(catKey ? getRecentKeywords(catKey) : [])
+  ]);
+  const fresh = pool.filter(k => !recentSet.has(k));
+  // fresh가 pool의 20% 미만이면 전체에서 선택 (너무 제한되지 않도록)
+  const source = fresh.length >= Math.max(1, Math.floor(pool.length * 0.2)) ? fresh : pool;
   const kw = source[Math.floor(Math.random() * source.length)];
-  recordKeyword(kw);
+  recordKeyword(kw, catKey);
   return kw;
 }
 

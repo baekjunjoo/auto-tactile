@@ -265,11 +265,11 @@ $('logoutBtn').onclick = async () => { await sb.auth.signOut(); location.reload(
 
 $('randBtn').onclick = () => {
   const raw = $('browseCat').value;
-  const pool = raw ? (topics[raw.replace(/\s*\(\d+\)$/, '')] || []) : Object.values(topics).flat();
+  const catKey = raw ? raw.replace(/\s*\(\d+\)$/, '') : null;  // C: 카테고리별 이력 관리
+  const pool = catKey ? (topics[catKey] || []) : Object.values(topics).flat();
   if (!pool.length) return;
-  // C: AutoLearn.pickRandom으로 최근 이력 제외
   const kw = (window.AutoLearn && window.AutoLearn.pickRandom)
-    ? window.AutoLearn.pickRandom(pool)
+    ? window.AutoLearn.pickRandom(pool, catKey)
     : pool[Math.floor(Math.random() * pool.length)];
   $('kw').value = kw; $('genBtn').click();
 };
