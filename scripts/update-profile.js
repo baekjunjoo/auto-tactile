@@ -3,6 +3,7 @@
    GitHub Actions에서 실행: Supabase 공개 데이터 → reference_profile.json 갱신 */
 
 const { createClient } = require('@supabase/supabase-js');
+const ws = require('ws');
 const fs = require('fs');
 const path = require('path');
 
@@ -91,7 +92,9 @@ async function main() {
     process.exit(1);
   }
 
-  const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    realtime: { transport: ws }
+  });
 
   // 페이지네이션으로 전체 수집
   let allData = [], from = 0;
