@@ -707,24 +707,7 @@ function svgToGrid(svgText, margin = 2) {
     }
   }
 
-  // 방법2: Canvas로 채도 기반 보완 — 색상 영역이 그레이스케일 이진화에서 누락된 부분 보충
-  const offCanvas = document.createElement('canvas');
-  offCanvas.width = gw; offCanvas.height = gh;
-  const ctx2 = offCanvas.getContext('2d', { willReadFrequently: true });
-  ctx2.fillStyle = '#fff'; ctx2.fillRect(0, 0, gw, gh);
-  ctx2.drawImage(svgEl, 0, 0, gw, gh);
-  const id = ctx2.getImageData(0, 0, gw, gh).data;
-  for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
-    const i = (y * gw + x) * 4;
-    const r = id[i], g = id[i+1], b = id[i+2], a = id[i+3];
-    if (a < 8) continue;  // 투명 픽셀 스킵
-    // 방법2: 채도 > 0.15 이거나 명도 < 180이면 잉크
-    const sat = _rgbToSaturation(r, g, b);
-    const lum = 0.299*r + 0.587*g + 0.114*b;
-    if (sat > 0.15 || lum < 180) grid[y][x] = 1;
-  }
-
-  host.remove();
+  host.remove();  // DOM 정리 (Canvas drawImage 제거: DOM 엘리먼트 직접 렌더링 불안정)
 
   // 5. thick_line 스타일 후처리 적용
   const ink = grid;
