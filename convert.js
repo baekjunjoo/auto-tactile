@@ -780,6 +780,21 @@ async function generateCandidates(keyword, profile, onProgress) {
   const activeProfile = (window.AutoLearn && window.AutoLearn.getProfileForCategory)
     ? window.AutoLearn.getProfileForCategory(cat)
     : profile;
+  // 이미 업로드된 아이콘 제외 (이미지 중복 방지)
+  let uploadedIcons = new Set();
+  if (window._supabaseClient) {
+    try {
+      const { data: uploaded } = await window._supabaseClient
+        .from('graphics')
+        .select('icon_source')
+        .in('icon_source', icons)
+        .eq('status', 'published');
+      if (uploaded) uploaded.forEach(r => r.icon_source && uploadedIcons.add(r.icon_source));
+    } catch(e) { /* 실패 시 무시 */ }
+  }
+  const freshIcons = icons.filter(i => !uploadedIcons.has(i));
+  const allUploaded = freshIcons.length === 0;
+  const iconsToProcess = allUploaded ? icons : freshIcons;  // 모두 업로드된 경우 전체 표시
   // I: Supabase 사전 변환 캐시 조회
   const cachedIcons = new Set();
   const cachedResults = [];
@@ -788,8 +803,8 @@ async function generateCandidates(keyword, profile, onProgress) {
       const { data: cacheRows } = await window._supabaseClient
         .from('icon_cache')
         .select('icon_id, hex, mode, score, likeness')
-        .in('icon_id', icons)
-        .limit(icons.length);
+        .in('icon_id', iconsToProcess)
+        .limit(iconsToProcess.length);
       if (cacheRows) {
         for (const row of cacheRows) {
           cachedIcons.add(row.icon_id);
@@ -800,9 +815,9 @@ async function generateCandidates(keyword, profile, onProgress) {
     } catch(e) { /* 캐시 조회 실패 시 무시 */ }
   }
   const out = [...cachedResults]; let failed = 0, doneN = cachedResults.length;
-  if (onProgress && doneN > 0) onProgress(doneN, icons.length);
-  for (const icon of icons) {
-    if (cachedIcons.has(icon)) { if (onProgress) onProgress(++doneN, icons.length); continue; }  // I: 캐시 히트 건너뛰
+  if (onProgress && doneN > 0) onProgress(doneN, iconsToProcess.length);
+  for (const icon of iconsToProcess) {
+    if (cachedIcons.has(icon)) { if (onProgress) onProgress(++doneN, iconsToProcess.length); continue; }  // I: 캐시 히트 건너뛰
     try {
       const svgText = await fetchIconSvg(icon);
 
@@ -849,11 +864,13 @@ async function generateCandidates(keyword, profile, onProgress) {
         }, { onConflict: 'icon_id' }).then(()=>{}).catch(()=>{});
       }
     } catch (e) { failed++; }
-    if (onProgress) onProgress(++doneN, icons.length);
+    if (onProgress) onProgress(++doneN, iconsToProcess.length);
   }
   out.sort((a, b) => ((b.likeness || 0) - (a.likeness || 0)) || (b.score - a.score));
+  // 업로드된 아이콘에 표시 (UI에서 이미 업로드된 것 표시하도록)
+  out.forEach(c => { if (uploadedIcons.has(c.icon)) c.alreadyUploaded = true; });
   return { keyword, suggested_title: keyword.trim().replace(/\b\w/g, c => c.toUpperCase()),
-    suggested_category: siteCategory(keyword), candidates: out, failed };
+    suggested_category: siteCategory(keyword), candidates: out, failed, allUploaded };
 }
 
 window.AutoTactile = { generateCandidates, categorize, siteCategory, SITE_CATEGORIES, W, H, toHex, APP_TUNING, PREFER_PREFIXES };

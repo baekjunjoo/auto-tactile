@@ -42,6 +42,7 @@
   section h2 { font-size:14px; font-weight:400; color:var(--muted); margin-bottom:16px; }
   .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(225px,1fr)); gap:12px; margin-top:20px; }
   .card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:10px; cursor:pointer; }
+  .card.uploaded { opacity:0.5; }
   .card:hover { border-color:var(--muted); }
   .card.sel { border-color:var(--cream); }
   .card img { width:100%; border-radius:9px; display:block; }
@@ -297,14 +298,18 @@ $('genBtn').onclick = async () => {
       }));
       sb.from('feedback_log').insert(feedRows).then(() => {}).catch(() => {});
     }
+    // 모두 업로드된 경우 안내
+    if (res.allUploaded) $('genNote').textContent = lang === 'ko' ? '이 키워드의 모든 이미지가 이미 업로드되었어요. 아래 후보는 참고용입니다.' : 'All images for this keyword are already uploaded. Showing for reference.';
     for (const c of res.candidates) {
       c.key = kw + '|' + c.icon;
       const div = document.createElement('div'); div.className = 'card'; div.dataset.key = c.key;
       if (basket.some(b => b.key === c.key)) div.classList.add('sel');
+      if (c.alreadyUploaded) div.classList.add('uploaded');  // 이미 업로드된 아이콘 표시
       const lik = c.likeness == null ? '-' : c.likeness;
+      const uploadedBadge = c.alreadyUploaded ? `<span class="b" style="background:var(--dim)">✓ 업로드됨</span>` : '';
       div.innerHTML = `<img src="${c.preview}"><div class="badges">
         <span class="b mode-${c.mode}">${c.mode}</span><span class="b">${t('score')} ${c.score}</span>
-        <span class="b ${lik >= 85 ? 'lik-hi' : (lik < 78 ? 'lik-lo' : '')}">${t('likeness')} ${lik}</span></div>
+        <span class="b ${lik >= 85 ? 'lik-hi' : (lik < 78 ? 'lik-lo' : '')}">${t('likeness')} ${lik}</span>${uploadedBadge}</div>
         <div class="iconid">${c.icon}</div>`;
       div.onclick = () => {
         const i = basket.findIndex(b => b.key === c.key);
