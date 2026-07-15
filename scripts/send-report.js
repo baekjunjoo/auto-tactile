@@ -4,14 +4,13 @@
 
 const { createClient } = require('@supabase/supabase-js');
 const ws = require('ws');
-const nodemailer = require('nodemailer');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 
 const SUPABASE_URL  = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
-const SMTP_USER    = process.env.SMTP_USER;
-const SMTP_PASS    = process.env.SMTP_PASS;
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const REPORT_TO    = process.env.REPORT_TO || 'mason@dotincorp.com';
 
 const W = 60, H = 40;
@@ -148,27 +147,47 @@ async function main() {
 </body>
 </html>`;
 
-  // 이메일 발송
-  if (!SMTP_USER || !SMTP_PASS) {
-    console.log('SMTP 설정 없음 — 보고서 내용만 출력:');
+  // Resend API로 이메일 발송
+  if (!RESEND_API_KEY) {
+    console.log('RESEND_API_KEY 없음 — 보고서 내용만 출력:');
     console.log(`총 공개: ${totalCount}, 오늘 추가: ${todayCount}, 평균 coverage: ${avgCoverage}`);
-    console.log('카테고리:', catCount);
     return;
   }
 
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: SMTP_USER, pass: SMTP_PASS }
-  });
-
-  await transporter.sendMail({
-    from: `Auto Tactile <${SMTP_USER}>`,
-    to: REPORT_TO,
+  const payload = JSON.stringify({
+    from: 'Auto Tactile <onboarding@resend.dev>',
+    to: [REPORT_TO],
     subject: `[Auto Tactile] 자가학습 보고서 ${today} — 총 ${totalCount}개, 오늘 +${todayCount}개`,
     html
   });
 
-  console.log(`✅ 보고서 발송 완료 → ${REPORT_TO}`);
+  await new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: 'api.resend.com',
+      path: '/emails',
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload)
+      }
+    }, (res) => {
+      let body = '';
+      res.on('data', d => body += d);
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          console.log(`✅ 보고서 발송 완료 → ${REPORT_TO} (HTTP ${res.statusCode})`);
+          resolve();
+        } else {
+          reject(new Error(`Resend API 오류 ${res.statusCode}: ${body}`));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
+
   console.log(`   총 ${totalCount}개, 오늘 +${todayCount}개, 평균 coverage ${avgCoverage}`);
 }
 
