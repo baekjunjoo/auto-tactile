@@ -19,7 +19,7 @@ jobs:
           node-version: '22'
 
       - name: Install dependencies
-        run: npm install @supabase/supabase-js ws
+        run: npm install @supabase/supabase-js ws nodemailer
 
       - name: Fetch published data and update profile
         env:
@@ -34,3 +34,12 @@ jobs:
           git add reference_profile.json
           git diff --cached --quiet || git commit -m "chore: auto-update reference_profile.json [skip ci]"
           git push
+
+      - name: Send daily report email
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          REPORT_TO: mason@dotincorp.com
+        run: node scripts/send-report.js
