@@ -558,22 +558,31 @@ const APP_TUNING = { modes_try: ['rich', 'thick_line', 'ref', 'line'], coverage_
 // - coverage_max: 96×40은 60×40보다 픽셀이 1.6배 많아 같은 이미지도 coverage가 높게 나옴 → 완화
 const APP_TUNING_MONARCH = { ...APP_TUNING, modes_try: ['rich', 'ref', 'line'],
   coverage_min: 0.04, coverage_max: 0.35, min_score: 50 };
-function convertBest(id, profile, tuning = APP_TUNING, device) {
+function convertBest(id, profile, tuning = APP_TUNING, device, iconId) {
   // 디바이스별 튜닝 선택
   const activeTuning = (device === 'monarch480') ? APP_TUNING_MONARCH : tuning;
+  // PREFIX_MODE_MAP: 아이콘 prefix별 최적 모드 순서 지정
+  const prefix = iconId ? iconId.split(':')[0] : null;
+  const prefixModes = prefix && PREFIX_MODE_MAP[prefix] ? PREFIX_MODE_MAP[prefix] : null;
+  const modesBase = prefixModes || activeTuning.modes_try;
   const colorful = isColorful(id), cands = [];
-  for (const mode of activeTuning.modes_try) {
+  for (const mode of modesBase) {
     if (mode === 'rich' && !colorful) continue;
     let g; try { g = imageToGrid(id, mode, 2, activeTuning.ref_hole_fill_max, activeTuning.ref_accent_max, device); } catch (e) { continue; }
-    // E: 모드별 품질 기준 적용
     const modeTuning = { ...activeTuning, ...(MODE_TUNING[mode] || {}) };
-    const m = gridMetrics(g), s = qualityScore(m, modeTuning);
-    cands.push({ g, mode, m, s, likeness: refLikeness(g, profile) });
+    const m = gridMetrics(g);
+    const qs = qualityScore(m, modeTuning);
+    const lik = refLikeness(g, profile);  // 0~100 or null
+    // combined score: qualityScore 70% + refLikeness 30% (없으면 qualityScore만)
+    const combined = lik != null ? qs * 0.7 + lik * 0.3 : qs;
+    cands.push({ g, mode, m, s: combined, qs, likeness: lik });
   }
   if (!cands.length) return null;
-  const prefOrder = device === 'monarch480' ? ['rich', 'ref', 'line'] : ['rich', 'thick_line', 'ref', 'line'];
+  // 모드 우선순서: prefix 지정이 있으면 해당 순서, 없으면 기본 순서
+  const prefOrder = prefixModes || (device === 'monarch480' ? ['rich', 'ref', 'line'] : ['rich', 'thick_line', 'ref', 'line']);
+  const minScore = activeTuning.min_score;
   for (const pref of prefOrder)
-    for (const c of cands) if (c.mode === pref && c.m.dots >= 60 && c.s >= (MODE_TUNING[c.mode]?.min_score ?? activeTuning.min_score)) return c;
+    for (const c of cands) if (c.mode === pref && c.m.dots >= 60 && c.qs >= (MODE_TUNING[c.mode]?.min_score ?? minScore)) return c;
   return cands.reduce((a, b) => (b.s > a.s ? b : a));
 }
 
@@ -608,6 +617,29 @@ const siteCategory = kw => { const c = categorize(kw); return SITE_CATEGORIES.in
 /* ---------- Iconify 수급 ---------- */
 const PREFER_PREFIXES = ['openmoji', 'game-icons', 'twemoji', 'material-symbols', 'noto',
   'mdi', 'fluent-emoji', 'fa6-solid', 'streamline-emojis', 'fa-solid', 'ic', 'ph', 'tabler'];
+
+// prefix별 최적 모드 지정
+// outline 기반 아이콘은 ref 우선, solid 기반은 thick_line 우선
+const PREFIX_MODE_MAP = {
+  'tabler':              ['ref', 'line'],          // 아웃라인 전용
+  'mdi-light':           ['ref', 'line'],
+  'material-symbols-light': ['ref', 'line'],
+  'ph':                  ['ref', 'line'],
+  'lucide':              ['ref', 'line'],
+  'heroicons':           ['ref', 'line'],
+  'feather':             ['ref', 'line'],
+  'fa-regular':          ['ref', 'line'],
+  'mdi':                 ['thick_line', 'ref', 'line'],  // 혼합
+  'material-symbols':    ['thick_line', 'ref', 'line'],
+  'fa-solid':            ['thick_line', 'ref', 'line'],  // 솔리드
+  'fa6-solid':           ['thick_line', 'ref', 'line'],
+  'ic':                  ['thick_line', 'ref', 'line'],
+  'openmoji':            ['rich', 'ref'],               // 컨러
+  'twemoji':             ['rich', 'ref'],
+  'noto':                ['rich', 'ref'],
+  'fluent-emoji':        ['rich', 'ref'],
+  'game-icons':          ['thick_line', 'ref', 'line'],
+};
 function faceFirst(list) {
   return list.slice().sort((a, b) => {
     const fa = (a.includes('face') || a.includes('head')) ? 0 : 1;
@@ -636,6 +668,8 @@ async function searchCandidates(keyword, n = 10) {
 async function fetchIconSvg(iconId) {      // → SVG 텍스트 원문 반환
   const [prefix, name] = iconId.split(/:(.+)/);
   const svg = await fetch(`https://api.iconify.design/${prefix}/${name}.svg?height=480`).then(r => r.text());
+  // 텍스트 포함 SVG 감지 → 점자 그래픽에 부적합
+  if (/<text[\s>]|<tspan[\s>]/i.test(svg)) throw new Error(`text-bearing SVG: ${iconId}`);
   return svg.replace(/currentColor/g, '#000000');
 }
 async function fetchIconImage(iconId) {     // → HTMLImageElement (흰배경 합성은 rasterize가)
@@ -876,12 +910,13 @@ async function generateCandidates(keyword, profile, onProgress, device) {
         setTimeout(() => URL.revokeObjectURL(url), 0);
         const rasterW = Math.max(480, sp.W * 8);  // Monarch는 더 큰 해상도로 래스터화
         const id = rasterize(img, rasterW);
-        best = convertBest(id, activeProfile, APP_TUNING, device);
+        best = convertBest(id, activeProfile, APP_TUNING, device, icon);
       } catch(e) {}
 
       if (!best) { failed++; continue; }
       const hexStr = toHex(best.g, device);
-      out.push({ icon, mode: best.mode, score: best.s, likeness: best.likeness,
+      // score는 UI 표시용으로 순수 품질점수(qs) 사용
+      out.push({ icon, mode: best.mode, score: best.qs ?? best.s, likeness: best.likeness,
         hex: hexStr, preview: previewDataURL(best.g, device) });
       // I: 새로 변환된 결과를 icon_cache에 저장 (비동기, 디바이스별로 구분)
       if (window._supabaseClient) {
