@@ -553,19 +553,24 @@ const MODE_TUNING = {
 /* ---------- convert_best (rich→ref→line) ---------- */
 const APP_TUNING = { modes_try: ['rich', 'thick_line', 'ref', 'line'], coverage_min: 0.05, coverage_max: 0.22,
   min_score: 55, ref_hole_fill_max: REF_HOLE_FILL_MAX, ref_accent_max: REF_ACCENT_MAX };
+// Monarch 480: thick_line은 96×40에서 형태학적 연산 스케일 불일치로 깨짐 발생 → 제외
+const APP_TUNING_MONARCH = { ...APP_TUNING, modes_try: ['rich', 'ref', 'line'] };
 function convertBest(id, profile, tuning = APP_TUNING, device) {
+  // 디바이스별 튜닝 선택
+  const activeTuning = (device === 'monarch480') ? APP_TUNING_MONARCH : tuning;
   const colorful = isColorful(id), cands = [];
-  for (const mode of tuning.modes_try) {
+  for (const mode of activeTuning.modes_try) {
     if (mode === 'rich' && !colorful) continue;
-    let g; try { g = imageToGrid(id, mode, 2, tuning.ref_hole_fill_max, tuning.ref_accent_max, device); } catch (e) { continue; }
+    let g; try { g = imageToGrid(id, mode, 2, activeTuning.ref_hole_fill_max, activeTuning.ref_accent_max, device); } catch (e) { continue; }
     // E: 모드별 품질 기준 적용
-    const modeTuning = { ...tuning, ...(MODE_TUNING[mode] || {}) };
+    const modeTuning = { ...activeTuning, ...(MODE_TUNING[mode] || {}) };
     const m = gridMetrics(g), s = qualityScore(m, modeTuning);
     cands.push({ g, mode, m, s, likeness: refLikeness(g, profile) });
   }
   if (!cands.length) return null;
-  for (const pref of ['rich', 'thick_line', 'ref', 'line'])
-    for (const c of cands) if (c.mode === pref && c.m.dots >= 60 && c.s >= (MODE_TUNING[c.mode]?.min_score ?? tuning.min_score)) return c;
+  const prefOrder = device === 'monarch480' ? ['rich', 'ref', 'line'] : ['rich', 'thick_line', 'ref', 'line'];
+  for (const pref of prefOrder)
+    for (const c of cands) if (c.mode === pref && c.m.dots >= 60 && c.s >= (MODE_TUNING[c.mode]?.min_score ?? activeTuning.min_score)) return c;
   return cands.reduce((a, b) => (b.s > a.s ? b : a));
 }
 
