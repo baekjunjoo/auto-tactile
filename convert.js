@@ -788,11 +788,11 @@ function _hexToGrid(hex, device) {
 /* ---------- 미리보기 (biocode 톤) ---------- */
 function previewDataURL(g, device, scale, pad = 4) {
   const sp = getSpec(device);
-  // Monarch는 가로가 넓어서 scale 자동 조정 (canvas 최대 너비 900px 기준)
-  if (!scale) scale = sp.W === 96 ? 4 : 6;
+  // Monarch는 가로가 넓어서 scale 자동 조정
+  if (!scale) scale = sp.W === 96 ? 5 : 6;
   const c = document.createElement('canvas'); c.width = sp.W * scale + pad * 2; c.height = sp.H * scale + pad * 2;
   const ctx = c.getContext('2d'); ctx.fillStyle = 'rgb(20,18,15)'; ctx.fillRect(0, 0, c.width, c.height);
-  const rOn = Math.max(1, (scale >> 1) - 1);
+  const rOn = Math.max(2, (scale >> 1) - 1);  // 최소 2픽셀 반지름 보장
   for (let y = 0; y < sp.H; y++) for (let x = 0; x < sp.W; x++) {
     const cx = pad + x * scale + (scale >> 1), cy = pad + y * scale + (scale >> 1);
     ctx.beginPath();
