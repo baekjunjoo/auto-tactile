@@ -9,7 +9,7 @@
 'use strict';
 
 const MIN_SAMPLES    = 20;
-const MAX_FETCH      = 500;
+const MAX_FETCH      = 2000;  // 5: 샘플 상한 확대 (985개 전체 학습)
 const STORAGE_KEY    = 'at_learned_v2';
 const RAND_HIST_KEY  = 'at_rand_hist';  // 전체 이력
 const RAND_HIST_CAT  = 'at_rand_cat';   // 카테고리별 이력
@@ -166,7 +166,7 @@ async function run(supabase, { force = false } = {}) {
   console.log('[learn] 공개 데이터 수집 중…');
   const { data, error } = await supabase
     .from('graphics')
-    .select('items, category, icon_source, tags')
+    .select('items, category, icon_source, tags, spec')
     .eq('status', 'published')
     .limit(MAX_FETCH);
 
@@ -175,9 +175,13 @@ async function run(supabase, { force = false } = {}) {
     return { skipped: true, reason: 'fetch_error' };
   }
 
-  // 전체 stats
+  // 6: 60×40 데이터만 필터링 (원래 hexToGrid가 60×40 고정)
+  const data320 = data.filter(r => !r.spec || r.spec === '60×40');
+  console.log(`[learn] 수집: 전체 ${data.length}건, 60×40: ${data320.length}건`);
+
+  // 전체 stats (60×40 기준)
   const allStats = [];
-  for (const row of data) {
+  for (const row of data320) {
     if (!row.items || !row.items[0] || !row.items[0].data) continue;
     try {
       const g = hexToGrid(row.items[0].data);
@@ -203,11 +207,11 @@ async function run(supabase, { force = false } = {}) {
   // APP_TUNING 갱신
   const tuningPatch = deriveTuning(allStats);
 
-  // D: 아이콘 소스 선호도
-  const iconPrefs = deriveIconPrefs(data);
+  // D: 아이콘 소스 선호도 (60×40 데이터 기준)
+  const iconPrefs = deriveIconPrefs(data320);
 
-  // G: 카테고리별 프로파일
-  const categoryProfiles = buildCategoryProfiles(data);
+  // G: 카테고리별 프로파일 (60×40 데이터 기준)
+  const categoryProfiles = buildCategoryProfiles(data320);
 
   const result = { ts: Date.now(), profile, tuning: tuningPatch, iconPrefs, categoryProfiles };
   _apply(result);

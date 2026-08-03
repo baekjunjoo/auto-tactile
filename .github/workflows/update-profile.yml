@@ -31,8 +31,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add reference_profile.json
-          git diff --cached --quiet || git commit -m "chore: auto-update reference_profile.json [skip ci]"
+          git add reference_profile.json reference_profile_480.json
+          git diff --cached --quiet || git commit -m "chore: auto-update reference profiles [skip ci]"
           git push
 
       - name: Send daily report email

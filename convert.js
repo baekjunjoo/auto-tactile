@@ -430,10 +430,18 @@ function imageToGrid(id, mode, margin = 2, holeFillMax = REF_HOLE_FILL_MAX, acce
   const gray = toGray(id); autocontrast(gray, 1);
   const box = autocropBox(gray, 245);
   const fit = grayFit(gray, box, sp.W - 2 * margin, sp.H - 2 * margin);
+  // 7: 이진화 임계값 개선 - Otsu + 고정값(180) 앙상블
+  // 연한 회색 선이 있는 아이콘에서 Otsu가 너무 높게 잡혀 선이 사라지는 문제 방지
+  function bestThreshold(gray2d) {
+    const otsu = otsu2d(gray2d);
+    const fixed = 180;
+    // Otsu가 너무 높으면(밝은 선) 고정값 사용, 너무 낙으면(어두운 이미지) Otsu 사용
+    return otsu > fixed ? fixed : otsu;
+  }
   let sub;
   if (mode === 'ref') {
     // close1을 boundary 이후로 이동: 이진화 직후 팩장으로 외곽선이 두꺼워지는 문제 방지
-    const ink = ink2d(fit, otsu2d(fit));
+    const ink = ink2d(fit, bestThreshold(fit));
     let u = boundary(ink);
     u = close1(u);  // 외곽선 추출 후 닫힌 연산으로 끊어진 선 보완
     for (const cells of holes(ink)) if (cells.length <= holeFillMax) for (const [hx, hy] of cells) u[hy][hx] = 1;
@@ -446,7 +454,7 @@ function imageToGrid(id, mode, margin = 2, holeFillMax = REF_HOLE_FILL_MAX, acce
     sub = u;
   } else if (mode === 'thick_line') {
     // 2픽셀 균일 외곽선 + 독립 특징(눈, 코 등) 솔리드 보존
-    const ink = ink2d(fit, otsu2d(fit));
+    const ink = ink2d(fit, bestThreshold(fit));
     let u = thickOutline(ink);
     // 독립된 작은 덩어리(눈, 코 등)를 솔리드로 덮어씌움
     const feat = extractFeatures(ink, accentMax);
@@ -456,8 +464,8 @@ function imageToGrid(id, mode, margin = 2, holeFillMax = REF_HOLE_FILL_MAX, acce
     sub = u;
   } else if (mode === 'thin') {
     sub = boundary(ink2d(fit, otsu2d(fit)));
-  } else { // line (2도트 윤곽)
-    const ink = close1(ink2d(fit, otsu2d(fit)));
+  } else { // line (2돈 윤곽)
+    const ink = close1(ink2d(fit, bestThreshold(fit)));
     let e = ink; for (let i = 0; i < 2; i++) e = erode(e);
     let u = fit.map((row, y) => row.map((_, x) => (ink[y][x] && !e[y][x]) ? 1 : 0));
     u = bridge4(u); u = close1(u); u = bridge4(u); u = dropSmall(u, 4);

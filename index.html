@@ -127,6 +127,7 @@
       <button class="primary" id="randBtn" data-i18n="random">🎲 랜덤</button>
       <select id="browseCat" style="min-width:120px"></select>
       <span id="genSpin" class="hidden muted"><span class="spin"></span><span id="spinTxt"></span></span>
+      <button id="cancelBtn" class="hidden" style="background:none;border:1px solid var(--line);border-radius:8px;padding:5px 12px;color:var(--err);cursor:pointer;font-size:13px">✕ 취소</button>
     </div>
     <div id="topicChips" class="row" style="margin-top:12px"></div>
     <div class="cards" id="cards"></div>
@@ -336,13 +337,26 @@ $('browseCat').onchange = () => {
   document.querySelectorAll('#topicChips .b').forEach(el => el.onclick = () => { $('kw').value = el.dataset.t; $('genBtn').click(); });
 };
 
+// 2: Enter 키로 만들기 동작
+$('kw').onkeydown = e => { if (e.key === 'Enter') $('genBtn').click(); };
+
+// 4: 취소 버튼
+let _cancelGen = false;
+$('cancelBtn').onclick = () => { _cancelGen = true; };
+
 $('genBtn').onclick = async () => {
   const kw = $('kw').value.trim(); if (!kw) return;
+  _cancelGen = false;
   $('cards').innerHTML = ''; $('genNote').textContent = ''; show('genSpin'); $('genBtn').disabled = true; $('spinTxt').textContent = t('generating');
+  // 4: 취소 버튼 표시
+  show('cancelBtn', true);
   try {
     // 디바이스에 맞는 프로파일 선택
     const activeProfile = (currentDevice === 'monarch480' && profile480) ? profile480 : profile;
-    const res = await AT.generateCandidates(kw, activeProfile, (i, n) => { $('spinTxt').textContent = `${t('generating')} ${i}/${n}`; }, currentDevice);
+    const res = await AT.generateCandidates(kw, activeProfile, (i, n) => {
+      if (_cancelGen) throw new Error('cancelled');
+      $('spinTxt').textContent = `${t('generating')} ${i}/${n}`;
+    }, currentDevice);
     if (res.error) { $('genNote').textContent = res.error; return; }
     lastKw = kw; lastCat = res.suggested_category;
     if (!res.candidates.length) { $('genNote').textContent = t('noCand'); return; }
@@ -383,11 +397,16 @@ $('genBtn').onclick = async () => {
             sb.from('feedback_log').insert({ keyword: kw, icon: c.icon, mode: c.mode, score: c.score, likeness: c.likeness, action: 'selected', user_id: user.id }).then(()=>{}).catch(()=>{});
         }
         $('status').textContent = ''; $('status').className = ''; renderBasket();
+          // 3: 첫 선택 시 바구니로 부드럽게 스크롤
+          if (basket.length === 1 && i < 0) setTimeout(() => $('pubPanel').scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
       };
       $('cards').appendChild(div);
     }
     if (res.failed) $('genNote').textContent = t('failedN', res.failed);
-  } finally { show('genSpin', false); $('genBtn').disabled = false; }
+  } catch(e) {
+    if (_cancelGen) { $('genNote').textContent = lang === 'ko' ? '생성이 취소됐어요.' : 'Generation cancelled.'; }
+    else throw e;
+  } finally { show('genSpin', false); show('cancelBtn', false); $('genBtn').disabled = false; }
 };
 
 $('pubBtn').onclick = async () => {
