@@ -680,13 +680,15 @@ function svgToGrid(svgText, margin = 2, device) {
 
   // 3. 오프스크린 SVG를 실제 DOM에 붙여 getPointAtLength 사용 가능하게
   const gw = sp.W - 2 * margin, gh = sp.H - 2 * margin;
+  // 높은 해상도로 렌더링해서 좌표 정밀도 향상 (viewBox 좌표 문제 해결)
+  const renderScale = 8;  // SVG를 gw×renderScale 크기로 렌더링
+  const rw = gw * renderScale, rh = gh * renderScale;
   const host = document.createElement('div');
   host.style.cssText = 'position:absolute;visibility:hidden;width:0;height:0;overflow:hidden';
   document.body.appendChild(host);
 
-  // SVG를 gw×gh 크기로 렌더링
-  svgEl.setAttribute('width', gw);
-  svgEl.setAttribute('height', gh);
+  svgEl.setAttribute('width', rw);
+  svgEl.setAttribute('height', rh);
   host.appendChild(svgEl);
 
   const grid = zeros(gh, gw);
@@ -707,11 +709,12 @@ function svgToGrid(svgText, margin = 2, device) {
       try { len = shape.getTotalLength(); } catch(e) { continue; }
       if (!len || len <= 0) continue;
 
-      const steps = Math.max(100, Math.ceil(len * 2));
+      const steps = Math.max(200, Math.ceil(len / renderScale * 4));
       const pts = [];
       for (let i = 0; i <= steps; i++) {
         const pt = shape.getPointAtLength((i / steps) * len);
-        const gx = Math.round(pt.x), gy = Math.round(pt.y);
+        // renderScale로 나눠서 그리드 좌표로 변환
+        const gx = Math.round(pt.x / renderScale), gy = Math.round(pt.y / renderScale);
         if (gx >= 0 && gx < gw && gy >= 0 && gy < gh) pts.push([gx, gy]);
       }
 
@@ -728,10 +731,11 @@ function svgToGrid(svgText, margin = 2, device) {
       // circle/rect/ellipse/line: bbox 픽셀 채우기
       try {
         const bbox = shape.getBBox();
-        const x0 = Math.max(0, Math.floor(bbox.x));
-        const y0 = Math.max(0, Math.floor(bbox.y));
-        const x1 = Math.min(gw - 1, Math.ceil(bbox.x + bbox.width));
-        const y1 = Math.min(gh - 1, Math.ceil(bbox.y + bbox.height));
+        // renderScale로 나눠서 그리드 좌표로 변환
+        const x0 = Math.max(0, Math.floor(bbox.x / renderScale));
+        const y0 = Math.max(0, Math.floor(bbox.y / renderScale));
+        const x1 = Math.min(gw - 1, Math.ceil((bbox.x + bbox.width) / renderScale));
+        const y1 = Math.min(gh - 1, Math.ceil((bbox.y + bbox.height) / renderScale));
         for (let py = y0; py <= y1; py++) for (let px = x0; px <= x1; px++) grid[py][px] = 1;
       } catch(e) { /* skip */ }
     }
