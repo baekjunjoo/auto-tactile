@@ -553,8 +553,11 @@ const MODE_TUNING = {
 /* ---------- convert_best (rich→ref→line) ---------- */
 const APP_TUNING = { modes_try: ['rich', 'thick_line', 'ref', 'line'], coverage_min: 0.05, coverage_max: 0.22,
   min_score: 55, ref_hole_fill_max: REF_HOLE_FILL_MAX, ref_accent_max: REF_ACCENT_MAX };
-// Monarch 480: thick_line은 96×40에서 형태학적 연산 스케일 불일치로 깨짐 발생 → 제외
-const APP_TUNING_MONARCH = { ...APP_TUNING, modes_try: ['rich', 'ref', 'line'] };
+// Monarch 480 튜닝:
+// - thick_line: 96×40에서 형태학적 연산 스케일 불일치로 깨짐 발생 → 제외
+// - coverage_max: 96×40은 60×40보다 픽셀이 1.6배 많아 같은 이미지도 coverage가 높게 나옴 → 완화
+const APP_TUNING_MONARCH = { ...APP_TUNING, modes_try: ['rich', 'ref', 'line'],
+  coverage_min: 0.04, coverage_max: 0.35, min_score: 50 };
 function convertBest(id, profile, tuning = APP_TUNING, device) {
   // 디바이스별 튜닝 선택
   const activeTuning = (device === 'monarch480') ? APP_TUNING_MONARCH : tuning;
