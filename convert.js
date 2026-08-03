@@ -390,8 +390,24 @@ function extractFeatures(ink, maxSize = 60) {
 /* ---------- imageToGrid ---------- */
 function placeGrid(sub, margin) {
   const g = zeros(H, W);
+  // sub의 실제 콘텐츠 bounding box 계산
+  let x0 = sub[0].length, y0 = sub.length, x1 = -1, y1 = -1;
   for (let y = 0; y < sub.length; y++) for (let x = 0; x < sub[0].length; x++)
-    if (sub[y][x]) { const gx = x + margin, gy = y + margin; if (gx >= 0 && gx < W && gy >= 0 && gy < H) g[gy][gx] = 1; }
+    if (sub[y][x]) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  if (x1 < 0) return g;  // 빈 그리드
+  const cw = x1 - x0 + 1, ch = y1 - y0 + 1;
+  // 60×40 중앙에 배치 (margin 여백 확보)
+  const maxW = W - 2 * margin, maxH = H - 2 * margin;
+  // 콘텐츠가 maxW×maxH보다 크면 비율 유지 축소
+  const scale = Math.min(1, maxW / cw, maxH / ch);
+  const pw = Math.round(cw * scale), ph = Math.round(ch * scale);
+  const ox = Math.round((W - pw) / 2), oy = Math.round((H - ph) / 2);
+  for (let dy = 0; dy < ph; dy++) for (let dx = 0; dx < pw; dx++) {
+    const sx = x0 + Math.min(cw - 1, Math.floor(dx / scale));
+    const sy = y0 + Math.min(ch - 1, Math.floor(dy / scale));
+    if (sub[sy][sx]) { const gx = ox + dx, gy = oy + dy;
+      if (gx >= 0 && gx < W && gy >= 0 && gy < H) g[gy][gx] = 1; }
+  }
   return g;
 }
 function imageToGrid(id, mode, margin = 2, holeFillMax = REF_HOLE_FILL_MAX, accentMax = REF_ACCENT_MAX) {

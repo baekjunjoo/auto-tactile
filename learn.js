@@ -13,7 +13,7 @@ const MAX_FETCH      = 500;
 const STORAGE_KEY    = 'at_learned_v2';
 const RAND_HIST_KEY  = 'at_rand_hist';  // 전체 이력
 const RAND_HIST_CAT  = 'at_rand_cat';   // 카테고리별 이력
-const RAND_HIST_MAX  = 100;  // C: 최근 100개 키워드 이력 (955개 풀의 10%)
+const RAND_HIST_MAX  = 200;  // C: 최근 200개 키워드 이력 (955개 풀의 20%)
 const CACHE_TTL      = 24 * 60 * 60 * 1000;  // 24시간
 
 const W = 60, H = 40;
@@ -258,17 +258,34 @@ function recordKeyword(kw, catKey) {
 }
 function pickRandom(pool, catKey) {
   if (!pool.length) return null;
-  // 카테고리 이력 우선, 없으면 전체 이력 사용
   const recentSet = new Set([
     ...getRecentKeywords(),
     ...(catKey ? getRecentKeywords(catKey) : [])
   ]);
   const fresh = pool.filter(k => !recentSet.has(k));
-  // fresh가 pool의 20% 미만이면 전체에서 선택 (너무 제한되지 않도록)
-  const source = fresh.length >= Math.max(1, Math.floor(pool.length * 0.2)) ? fresh : pool;
+  // fresh가 pool의 30% 미만이면 전체에서 선택
+  const source = fresh.length >= Math.max(1, Math.floor(pool.length * 0.3)) ? fresh : pool;
   const kw = source[Math.floor(Math.random() * source.length)];
   recordKeyword(kw, catKey);
   return kw;
+}
+
+// 카테고리 균등 가중치 랜덤 (전체 풀에서 카테고리 먼저 균등 선택 후 키워드 선택)
+function pickRandomBalanced(topics) {
+  const cats = Object.keys(topics);
+  if (!cats.length) return null;
+  // 이력에 없는 카테고리 우선 선택
+  const recentCats = new Set(
+    getRecentKeywords().map(kw => {
+      for (const [cat, kws] of Object.entries(topics)) if (kws.includes(kw)) return cat;
+      return null;
+    }).filter(Boolean)
+  );
+  const freshCats = cats.filter(c => !recentCats.has(c));
+  const catSource = freshCats.length > 0 ? freshCats : cats;
+  const cat = catSource[Math.floor(Math.random() * catSource.length)];
+  const pool = topics[cat] || [];
+  return pickRandom(pool, cat);
 }
 
 /* ---------- G: 카테고리별 프로파일 조회 ---------- */
@@ -280,7 +297,7 @@ function getProfileForCategory(cat) {
 function getProfile() { return window.AutoLearn.profile; }
 
 window.AutoLearn = {
-  run, getProfile, getProfileForCategory, pickRandom, recordKeyword,
+  run, getProfile, getProfileForCategory, pickRandom, pickRandomBalanced, recordKeyword,
   profile: null, categoryProfiles: {}
 };
 })();

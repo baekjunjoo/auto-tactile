@@ -266,12 +266,19 @@ $('logoutBtn').onclick = async () => { await sb.auth.signOut(); location.reload(
 
 $('randBtn').onclick = () => {
   const raw = $('browseCat').value;
-  const catKey = raw ? raw.replace(/\s*\(\d+\)$/, '') : null;  // C: 카테고리별 이력 관리
-  const pool = catKey ? (topics[catKey] || []) : Object.values(topics).flat();
-  if (!pool.length) return;
-  const kw = (window.AutoLearn && window.AutoLearn.pickRandom)
-    ? window.AutoLearn.pickRandom(pool, catKey)
-    : pool[Math.floor(Math.random() * pool.length)];
+  const catKey = raw ? raw.replace(/\s*\(\d+\)$/, '') : null;
+  let kw;
+  if (!catKey && window.AutoLearn && window.AutoLearn.pickRandomBalanced) {
+    // 카테고리 미선택 시: 카테고리 균등 가중치 랜덤 (부족 카테고리도 균등하게 노출)
+    kw = window.AutoLearn.pickRandomBalanced(topics);
+  } else {
+    const pool = catKey ? (topics[catKey] || []) : Object.values(topics).flat();
+    if (!pool.length) return;
+    kw = (window.AutoLearn && window.AutoLearn.pickRandom)
+      ? window.AutoLearn.pickRandom(pool, catKey)
+      : pool[Math.floor(Math.random() * pool.length)];
+  }
+  if (!kw) return;
   $('kw').value = kw; $('genBtn').click();
 };
 $('browseCat').onchange = () => {
