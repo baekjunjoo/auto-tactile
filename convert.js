@@ -848,6 +848,8 @@ async function generateCandidates(keyword, profile, onProgress, device) {
         .limit(iconsToProcess.length);
       if (cacheRows) {
         for (const row of cacheRows) {
+          // svg 모드 캐시는 무시 (SVG 파싱 방식 제거 후 유효하지 않음)
+          if (row.mode === 'svg') continue;
           cachedIcons.add(row.icon_id);
           cachedResults.push({ icon: row.icon_id, mode: row.mode, score: row.score,
             likeness: row.likeness, hex: row.hex, preview: previewDataURL(_hexToGrid(row.hex, device), device) });
