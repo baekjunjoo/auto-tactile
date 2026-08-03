@@ -96,11 +96,11 @@ async function main() {
     realtime: { transport: ws }
   });
 
-  // 페이지네이션으로 전체 수집
+  // 페이지네이션으로 전체 수집 (spec 코럼 포함)
   let allData = [], from = 0;
   while (true) {
     const { data, error } = await sb.from('graphics')
-      .select('items, category')
+      .select('items, category, spec')
       .eq('status', 'published')
       .range(from, from + 499);
     if (error || !data || !data.length) break;
@@ -112,10 +112,15 @@ async function main() {
 
   console.log(`수집된 데이터: ${allData.length}건`);
 
-  // 전체 stats
+  // spec별 데이터 분리 (320/480)
+  const data320 = allData.filter(r => !r.spec || r.spec === '60×40');
+  const data480 = allData.filter(r => r.spec === '96×40');
+  console.log(`  DotPad 320 (60×40): ${data320.length}건, Monarch 480 (96×40): ${data480.length}건`);
+
+  // 전체 stats (320 기준 - 기존 호환)
   const allStats = [];
   const catStats = {};
-  for (const row of allData) {
+  for (const row of data320) {
     if (!row.items || !row.items[0] || !row.items[0].data) continue;
     try {
       const g = hexToGrid(row.items[0].data);
@@ -125,6 +130,34 @@ async function main() {
       const cat = row.category || '기타';
       if (!catStats[cat]) catStats[cat] = [];
       catStats[cat].push(st);
+    } catch (e) {}
+  }
+
+  // 480 stats
+  const stats480 = [];
+  const catStats480 = {};
+  for (const row of data480) {
+    if (!row.items || !row.items[0] || !row.items[0].data) continue;
+    try {
+      // 480은 96×40 그리드로 디코딩
+      const hex = row.items[0].data;
+      const bytes = [];
+      for (let i = 0; i < hex.length; i += 2) bytes.push(parseInt(hex.slice(i, i + 2), 16));
+      const W480 = 96, H480 = 40, COLS480 = 48;
+      const g = Array.from({ length: H480 }, () => new Array(W480).fill(0));
+      for (let cr = 0; cr < 10; cr++) for (let cc = 0; cc < COLS480; cc++) {
+        const b = bytes[cr * COLS480 + cc];
+        for (let side = 0; side < 2; side++) {
+          const bits = side === 0 ? LEFT_BITS : RIGHT_BITS;
+          for (let r = 0; r < 4; r++) if (b & (1 << bits[r])) g[cr * 4 + r][cc * 2 + side] = 1;
+        }
+      }
+      const st = gridStats(g);
+      if (!st || st.dots < 60) continue;
+      stats480.push(st);
+      const cat = row.category || '기타';
+      if (!catStats480[cat]) catStats480[cat] = [];
+      catStats480[cat].push(st);
     } catch (e) {}
   }
 
@@ -155,6 +188,7 @@ async function main() {
   const profile = {
     n: allStats.length,
     updated_at: new Date().toISOString(),
+    spec: '60×40',
     stats,
     category_profiles: categoryProfiles
   };
@@ -162,6 +196,37 @@ async function main() {
   const outPath = path.join(__dirname, '..', 'reference_profile.json');
   fs.writeFileSync(outPath, JSON.stringify(profile, null, 2), 'utf-8');
   console.log(`reference_profile.json 갱신 완료 (n=${allStats.length}, 카테고리 ${Object.keys(categoryProfiles).length}개)`);
+
+  // 480 프로파일 별도 저장 (데이터가 있을 때만)
+  if (stats480.length >= MIN_SAMPLES) {
+    const stats480obj = {};
+    for (const k of keys) {
+      const vals = stats480.map(s=>s[k]).filter(v=>v!=null&&isFinite(v));
+      stats480obj[k] = calcStats(vals);
+    }
+    const catProfiles480 = {};
+    for (const [cat, cStats] of Object.entries(catStats480)) {
+      if (cStats.length < 5) continue;
+      const cp = { n: cStats.length, stats: {} };
+      for (const k of keys) {
+        const vals = cStats.map(s=>s[k]).filter(v=>v!=null&&isFinite(v));
+        cp.stats[k] = calcStats(vals);
+      }
+      catProfiles480[cat] = cp;
+    }
+    const profile480 = {
+      n: stats480.length,
+      updated_at: new Date().toISOString(),
+      spec: '96×40',
+      stats: stats480obj,
+      category_profiles: catProfiles480
+    };
+    const outPath480 = path.join(__dirname, '..', 'reference_profile_480.json');
+    fs.writeFileSync(outPath480, JSON.stringify(profile480, null, 2), 'utf-8');
+    console.log(`reference_profile_480.json 갱신 완료 (n=${stats480.length})`);
+  } else {
+    console.log(`480 데이터 부족 (${stats480.length}건), reference_profile_480.json 갱신 건너뛰`);
+  }
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

@@ -255,9 +255,12 @@ function renderBasket() {
   });
 }
 
+let profile480 = null;  // Monarch 480용 프로파일
+
 async function init() {
   cfg = await fetch('config.json').then(r => r.json());
   profile = await fetch('reference_profile.json').then(r => r.json()).catch(() => null);
+  profile480 = await fetch('reference_profile_480.json').then(r => r.json()).catch(() => null);
   topics = await fetch('topics.json').then(r => r.json()).catch(() => ({}));
   sb = window.supabase.createClient(cfg.supabase_url, cfg.anon_key);
   window._supabaseClient = sb;  // I: convert.js의 아이콘 캐시가 사용
@@ -337,7 +340,9 @@ $('genBtn').onclick = async () => {
   const kw = $('kw').value.trim(); if (!kw) return;
   $('cards').innerHTML = ''; $('genNote').textContent = ''; show('genSpin'); $('genBtn').disabled = true; $('spinTxt').textContent = t('generating');
   try {
-    const res = await AT.generateCandidates(kw, profile, (i, n) => { $('spinTxt').textContent = `${t('generating')} ${i}/${n}`; }, currentDevice);
+    // 디바이스에 맞는 프로파일 선택
+    const activeProfile = (currentDevice === 'monarch480' && profile480) ? profile480 : profile;
+    const res = await AT.generateCandidates(kw, activeProfile, (i, n) => { $('spinTxt').textContent = `${t('generating')} ${i}/${n}`; }, currentDevice);
     if (res.error) { $('genNote').textContent = res.error; return; }
     lastKw = kw; lastCat = res.suggested_category;
     if (!res.candidates.length) { $('genNote').textContent = t('noCand'); return; }
