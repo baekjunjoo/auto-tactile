@@ -898,5 +898,115 @@ async function generateCandidates(keyword, profile, onProgress, device) {
     suggested_category: siteCategory(keyword), candidates: out, failed, allUploaded };
 }
 
-window.AutoTactile = { generateCandidates, categorize, siteCategory, SITE_CATEGORIES, W, H, toHex, APP_TUNING, PREFER_PREFIXES, DEVICES, getSpec };
+/* ---------- 다운로드 포맷 변환 ---------- */
+
+// 1. DTMS (JSON) - 기존 포맷
+function toDtms(hex, title, device) {
+  const sp = getSpec(device);
+  return JSON.stringify({
+    title: title || 'Untitled',
+    lang: 'korean',
+    lang_option: '1',
+    device: device === 'monarch480' ? 'monarch480' : 'dotpad320',
+    audioPath: '',
+    items: [{
+      page: 1,
+      title: '1쪽',
+      graphic: { data: hex, desc: '' }
+    }]
+  }, null, 2);
+}
+
+// 2. SVG - 점자 그리드를 SVG circle로 렌더링
+function toSvg(hex, title, device) {
+  const sp = getSpec(device);
+  const g = _hexToGrid(hex, device);
+  const DOT_R = 1.8;    // 점 반지름 (mm 단위 기준)
+  const CELL_W = 6.0;   // 셀 가로 간격 (mm)
+  const CELL_H = 10.0;  // 셀 세로 간격 (mm)
+  const PIN_W = CELL_W / 2;  // 핀 가로 간격
+  const PIN_H = CELL_H / 4;  // 핀 세로 간격
+  const PAD = 5;
+  const svgW = sp.W * PIN_W + PAD * 2;
+  const svgH = sp.H * PIN_H + PAD * 2;
+  
+  let circles = '';
+  for (let y = 0; y < sp.H; y++) for (let x = 0; x < sp.W; x++) {
+    if (g[y][x]) {
+      const cx = (PAD + x * PIN_W + PIN_W / 2).toFixed(2);
+      const cy = (PAD + y * PIN_H + PIN_H / 2).toFixed(2);
+      circles += `<circle cx="${cx}" cy="${cy}" r="${DOT_R}" fill="#000"/>`;
+    }
+  }
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${svgW}mm" height="${svgH}mm" viewBox="0 0 ${svgW} ${svgH}">
+  <title>${title || 'Tactile Graphic'}</title>
+  <rect width="${svgW}" height="${svgH}" fill="white"/>
+  ${circles}
+</svg>`;
+}
+
+// 3. BRF - 유니코드 점자 문자 (U+2800~U+28FF)
+// DotPad 비트 매핑: bit0=왼1행, bit1=왼2행, bit2=왼3행, bit3=왼4행
+//                   bit4=우4행, bit5=우5히, bit6=우6행, bit7=우7행
+// 유니코드 점자: bit0=1점, bit1=2점, bit2=3점, bit3=4점
+//                   bit4=5점, bit5=6점, bit6=7점, bit7=8점
+// DotPad 비트와 유니코드 점자 비트가 동일하므로 1:1 매핑
+function toBrf(hex, device) {
+  const sp = getSpec(device);
+  const bytes = [];
+  for (let i = 0; i < hex.length; i += 2) bytes.push(parseInt(hex.slice(i, i + 2), 16));
+  let lines = [];
+  for (let row = 0; row < sp.ROWS; row++) {
+    let line = '';
+    for (let col = 0; col < sp.COLS; col++) {
+      const b = bytes[row * sp.COLS + col];
+      // 유니코드 점자 패턴: U+2800 + 비트값
+      line += String.fromCodePoint(0x2800 + b);
+    }
+    lines.push(line);
+  }
+  return lines.join('\n');
+}
+
+// 4. PEF - Portable Embosser Format (XML 1.0)
+function toPef(hex, title, device) {
+  const sp = getSpec(device);
+  const brfContent = toBrf(hex, device);
+  const rows = brfContent.split('\n');
+  const rowsXml = rows.map(r => `      <row>${r}</row>`).join('\n');
+  const now = new Date().toISOString().slice(0, 10);
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<pef version="2008-1" xmlns="http://www.daisy.org/ns/2008/pef">
+  <head>
+    <meta xmlns:dc="http://purl.org/dc/elements/1.1/">
+      <dc:title>${title || 'Tactile Graphic'}</dc:title>
+      <dc:date>${now}</dc:date>
+      <dc:format>application/x-pef+xml</dc:format>
+      <dc:description>Tactile graphic for ${sp.label} (${sp.spec})</dc:description>
+    </meta>
+  </head>
+  <body>
+    <volume cols="${sp.COLS}" rows="${sp.ROWS}" rowgap="0" duplex="false">
+      <section>
+        <page>
+${rowsXml}
+        </page>
+      </section>
+    </volume>
+  </body>
+</pef>`;
+}
+
+// 다운로드 트리거 헬퍼
+function downloadFile(content, filename, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 100);
+}
+
+window.AutoTactile = { generateCandidates, categorize, siteCategory, SITE_CATEGORIES, W, H, toHex, APP_TUNING, PREFER_PREFIXES, DEVICES, getSpec, toDtms, toSvg, toBrf, toPef, downloadFile };
 })();

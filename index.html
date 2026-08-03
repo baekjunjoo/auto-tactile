@@ -45,6 +45,8 @@
   .card.uploaded { opacity:0.5; }
   .devBtn { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:5px 12px; color:var(--muted); cursor:pointer; font-size:13px; margin-right:6px; }
   .devBtn.on { border-color:var(--cream); color:var(--cream); background:rgba(232,227,213,.08); }
+  .dlBtn { background:transparent; border:1px solid var(--line); border-radius:6px; padding:3px 10px; color:var(--muted); cursor:pointer; font-size:12px; font-family:monospace; }
+  .dlBtn:hover { border-color:var(--muted); color:var(--cream); }
   .card:hover { border-color:var(--muted); }
   .card.sel { border-color:var(--cream); }
   .card img { width:100%; border-radius:9px; display:block; object-fit:contain; background:rgb(20,18,15); }
@@ -211,13 +213,22 @@ function renderBasket() {
   show('pubPanel', basket.length > 0);
   const catOpts = c => AT.SITE_CATEGORIES.map(x => `<option${x === c ? ' selected' : ''}>${x}</option>`).join('');
   $('basketList').innerHTML = basket.map((b, i) => `
-    <div class="row" style="margin-top:10px;padding:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px">
-      <img src="${b.preview}" style="width:96px;border-radius:6px">
-      <input value="${b.title.replace(/"/g,'&quot;')}" data-i="${i}" class="bTitle" style="width:150px">
-      <select data-i="${i}" class="bCat">${catOpts(b.cat)}</select>
-      <span class="b mode-${b.mode}">${b.mode}</span>
-      ${autoTagsFor(b).map(tg => `<span class="tag">#${tg}</span>`).join('')}
-      <button data-i="${i}" class="bDel" style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:16px;margin-left:auto">✕</button>
+    <div style="margin-top:10px;padding:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px">
+      <div class="row">
+        <img src="${b.preview}" style="width:96px;border-radius:6px;object-fit:contain;background:rgb(20,18,15)">
+        <input value="${b.title.replace(/"/g,'&quot;')}" data-i="${i}" class="bTitle" style="width:150px">
+        <select data-i="${i}" class="bCat">${catOpts(b.cat)}</select>
+        <span class="b mode-${b.mode}">${b.mode}</span>
+        ${autoTagsFor(b).map(tg => `<span class="tag">#${tg}</span>`).join('')}
+        <button data-i="${i}" class="bDel" style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:16px;margin-left:auto">✕</button>
+      </div>
+      <div class="row" style="margin-top:8px;gap:6px">
+        <span class="muted" style="font-size:12px">다운로드:</span>
+        <button class="dlBtn" data-i="${i}" data-fmt="dtms">.dtms</button>
+        <button class="dlBtn" data-i="${i}" data-fmt="svg">.svg</button>
+        <button class="dlBtn" data-i="${i}" data-fmt="brf">.brf</button>
+        <button class="dlBtn" data-i="${i}" data-fmt="pef">.pef</button>
+      </div>
     </div>`).join('');
   document.querySelectorAll('.bTitle').forEach(el => el.oninput = e => basket[+e.target.dataset.i].title = e.target.value);
   document.querySelectorAll('.bCat').forEach(el => el.onchange = e => { basket[+e.target.dataset.i].cat = e.target.value; renderBasket(); });
@@ -225,6 +236,22 @@ function renderBasket() {
     const k = basket[+e.target.dataset.i].key; basket.splice(+e.target.dataset.i, 1);
     const card = document.querySelector(`.card[data-key="${CSS.escape(k)}"]`); if (card) card.classList.remove('sel');
     renderBasket();
+  });
+  // 다운로드 버튼 핸들러
+  document.querySelectorAll('.dlBtn').forEach(el => el.onclick = e => {
+    const b = basket[+e.target.dataset.i];
+    const fmt = e.target.dataset.fmt;
+    const slug = (b.title || 'untitled').toLowerCase().replace(/[^a-z0-9가-힣]+/g, '-').replace(/^-|-$/g, '');
+    const fname = slug || 'untitled';
+    if (fmt === 'dtms') {
+      AT.downloadFile(AT.toDtms(b.hex, b.title, b.device), `${fname}.dtms`, 'application/json');
+    } else if (fmt === 'svg') {
+      AT.downloadFile(AT.toSvg(b.hex, b.title, b.device), `${fname}.svg`, 'image/svg+xml');
+    } else if (fmt === 'brf') {
+      AT.downloadFile(AT.toBrf(b.hex, b.device), `${fname}.brf`, 'text/plain;charset=utf-8');
+    } else if (fmt === 'pef') {
+      AT.downloadFile(AT.toPef(b.hex, b.title, b.device), `${fname}.pef`, 'application/x-pef+xml');
+    }
   });
 }
 
