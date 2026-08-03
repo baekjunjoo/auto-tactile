@@ -397,8 +397,8 @@ $('genBtn').onclick = async () => {
             sb.from('feedback_log').insert({ keyword: kw, icon: c.icon, mode: c.mode, score: c.score, likeness: c.likeness, action: 'selected', user_id: user.id }).then(()=>{}).catch(()=>{});
         }
         $('status').textContent = ''; $('status').className = ''; renderBasket();
-          // 3: 첫 선택 시 바구니로 부드럽게 스크롤
-          if (basket.length === 1 && i < 0) setTimeout(() => $('pubPanel').scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+        // 3: 첫 선택 시 바구니로 부드럽게 스크롤
+        if (basket.length === 1) setTimeout(() => $('pubPanel').scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
       };
       $('cards').appendChild(div);
     }

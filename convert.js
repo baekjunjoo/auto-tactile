@@ -88,10 +88,18 @@ function grayFit(gray, box, tw, th) {
   const nh = Math.max(1, Math.min(th, Math.round(bh * sc)));
   const ox = (tw - nw) >> 1, oy = (th - nh) >> 1;
   const out = Array.from({ length: th }, () => new Array(tw).fill(255));
+  // area-average 리샘플링: 축소 시 선이 끊기지 않도록 블록 평균 사용
+  const invSc = 1 / sc;
   for (let ny = 0; ny < nh; ny++) for (let nx = 0; nx < nw; nx++) {
-    const sx = box.x0 + Math.min(bw - 1, Math.floor(nx / sc));
-    const sy = box.y0 + Math.min(bh - 1, Math.floor(ny / sc));
-    out[oy + ny][ox + nx] = gray.g[sy * gray.w + sx];
+    const srcX0 = box.x0 + nx * invSc, srcY0 = box.y0 + ny * invSc;
+    const srcX1 = Math.min(box.x0 + bw - 1, srcX0 + invSc);
+    const srcY1 = Math.min(box.y0 + bh - 1, srcY0 + invSc);
+    let sum = 0, cnt = 0;
+    for (let sy = Math.floor(srcY0); sy <= Math.floor(srcY1); sy++)
+      for (let sx = Math.floor(srcX0); sx <= Math.floor(srcX1); sx++) {
+        sum += gray.g[sy * gray.w + sx]; cnt++;
+      }
+    out[oy + ny][ox + nx] = cnt > 0 ? Math.round(sum / cnt) : 255;
   }
   return out;
 }
@@ -190,7 +198,12 @@ function components(grid) {                 // 4-conn
   }
   return comps;
 }
-function dropSmall(grid, minsize = 4) {
+function dropSmall(grid, minsize) {
+  // 7: 동적 임계값 — 전체 dots 수에 비례해서 조정
+  if (minsize == null) {
+    const dots = sumAll(grid);
+    minsize = dots > 200 ? 4 : dots > 100 ? 3 : 2;
+  }
   const out = clone(grid);
   for (const c of components(grid)) if (c.length < minsize) for (const [x, y] of c) out[y][x] = 0;
   return out;
@@ -410,11 +423,27 @@ function placeGrid(sub, margin, device) {
   const scale = Math.min(1, maxW / cw, maxH / ch);
   const pw = Math.round(cw * scale), ph = Math.round(ch * scale);
   const ox = Math.round((sp.W - pw) / 2), oy = Math.round((sp.H - ph) / 2);
-  for (let dy = 0; dy < ph; dy++) for (let dx = 0; dx < pw; dx++) {
-    const sx = x0 + Math.min(cw - 1, Math.floor(dx / scale));
-    const sy = y0 + Math.min(ch - 1, Math.floor(dy / scale));
-    if (sub[sy][sx]) { const gx = ox + dx, gy = oy + dy;
-      if (gx >= 0 && gx < sp.W && gy >= 0 && gy < sp.H) g[gy][gx] = 1; }
+  if (scale >= 1) {
+    // 확대/동일: 직접 복사
+    for (let dy = 0; dy < ch; dy++) for (let dx = 0; dx < cw; dx++) {
+      if (sub[y0 + dy][x0 + dx]) { const gx = ox + dx, gy = oy + dy;
+        if (gx >= 0 && gx < sp.W && gy >= 0 && gy < sp.H) g[gy][gx] = 1; }
+    }
+  } else {
+    // 축소: OR 방식 — 해당 영역에 1이 하나라도 있으면 1 (선 끊김 방지)
+    const invSc = 1 / scale;
+    for (let dy = 0; dy < ph; dy++) for (let dx = 0; dx < pw; dx++) {
+      const srcX0 = x0 + Math.floor(dx * invSc);
+      const srcY0 = y0 + Math.floor(dy * invSc);
+      const srcX1 = Math.min(x0 + cw - 1, x0 + Math.floor((dx + 1) * invSc));
+      const srcY1 = Math.min(y0 + ch - 1, y0 + Math.floor((dy + 1) * invSc));
+      let has = false;
+      for (let sy = srcY0; sy <= srcY1 && !has; sy++)
+        for (let sx = srcX0; sx <= srcX1 && !has; sx++)
+          if (sub[sy][sx]) has = true;
+      if (has) { const gx = ox + dx, gy = oy + dy;
+        if (gx >= 0 && gx < sp.W && gy >= 0 && gy < sp.H) g[gy][gx] = 1; }
+    }
   }
   return g;
 }
@@ -450,7 +479,7 @@ function imageToGrid(id, mode, margin = 2, holeFillMax = REF_HOLE_FILL_MAX, acce
       const big = Math.max(...comps.map(c => c.length));
       for (const c of comps) if (c.length < big && c.length <= accentMax) for (const [hx, hy] of c) u[hy][hx] = 1;
     }
-    u = bridge4(u); u = dropSmall(u, 3); u = stripStray(u); u = legibility(u); u = bridge4(u);
+    u = bridge4(u); u = dropSmall(u); u = stripStray(u); u = legibility(u); u = bridge4(u);
     sub = u;
   } else if (mode === 'thick_line') {
     // 2픽셀 균일 외곽선 + 독립 특징(눈, 코 등) 솔리드 보존
@@ -460,7 +489,7 @@ function imageToGrid(id, mode, margin = 2, holeFillMax = REF_HOLE_FILL_MAX, acce
     const feat = extractFeatures(ink, accentMax);
     for (let y = 0; y < u.length; y++) for (let x = 0; x < u[0].length; x++)
       if (feat[y][x]) u[y][x] = 1;
-    u = bridge4(u); u = dropSmall(u, 3); u = stripStray(u); u = bridge4(u);
+    u = bridge4(u); u = dropSmall(u); u = stripStray(u); u = bridge4(u);
     sub = u;
   } else if (mode === 'thin') {
     sub = boundary(ink2d(fit, otsu2d(fit)));
@@ -892,9 +921,13 @@ async function generateCandidates(keyword, profile, onProgress, device) {
         .in('icon_id', iconsToProcess)
         .limit(iconsToProcess.length);
       if (cacheRows) {
+        const CACHE_MAX_AGE = 30 * 24 * 60 * 60 * 1000;  // 9: 30일 만료
+        const now = Date.now();
         for (const row of cacheRows) {
           // svg 모드 캐시는 무시 (SVG 파싱 방식 제거 후 유효하지 않음)
           if (row.mode === 'svg') continue;
+          // 9: 30일 이상 된 캐시는 무시 (알고리즘 변경 반영)
+          if (row.updated_at && (now - new Date(row.updated_at).getTime()) > CACHE_MAX_AGE) continue;
           cachedIcons.add(row.icon_id);
           cachedResults.push({ icon: row.icon_id, mode: row.mode, score: row.score,
             likeness: row.likeness, hex: row.hex, preview: previewDataURL(_hexToGrid(row.hex, device), device) });
@@ -937,7 +970,12 @@ async function generateCandidates(keyword, profile, onProgress, device) {
     } catch (e) { failed++; }
     if (onProgress) onProgress(++doneN, iconsToProcess.length);
   }
-  out.sort((a, b) => ((b.likeness || 0) - (a.likeness || 0)) || (b.score - a.score));
+  // 6: combined score 내림차순 정렬 (가장 좋은 결과가 맨 앞)
+  out.sort((a, b) => {
+    const sa = (a.score || 0) * 0.7 + (a.likeness || 0) * 0.3;
+    const sb2 = (b.score || 0) * 0.7 + (b.likeness || 0) * 0.3;
+    return sb2 - sa;
+  });
   // 업로드된 아이콘에 표시 (UI에서 이미 업로드된 것 표시하도록)
   out.forEach(c => { if (uploadedIcons.has(c.icon)) c.alreadyUploaded = true; });
   return { keyword, suggested_title: keyword.trim().replace(/\b\w/g, c => c.toUpperCase()),
