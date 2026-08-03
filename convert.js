@@ -4,19 +4,28 @@
    알고리즘은 dotpad/{grid,convert,quality,categorize}.py와 1:1 대응. */
 (() => {
 'use strict';
-const W = 60, H = 40;
+const W = 60, H = 40;  // DotPad 320 기본값 (하위 호환)
 // tactileworlds 표준(fn=[[0,0],[0,1],[0,2],[0,3],[1,0],[1,1],[1,2],[1,3]])와 일치
 // bit 0-3 → 왼쪽 열 row 0-3, bit 4-7 → 오른쪽 열 row 0-3
 const LEFT_BITS = [0, 1, 2, 3], RIGHT_BITS = [4, 5, 6, 7];
 const REF_HOLE_FILL_MAX = 40, REF_ACCENT_MAX = 80;
 
+/* ---------- 디바이스 스펙 ---------- */
+const DEVICES = {
+  dotpad320: { W: 60, H: 40, COLS: 30, ROWS: 10, label: 'DotPad 320', spec: '60×40' },
+  monarch480: { W: 96, H: 40, COLS: 48, ROWS: 10, label: 'Monarch 480', spec: '96×40' }
+};
+const DEFAULT_DEVICE = 'dotpad320';
+function getSpec(device) { return DEVICES[device] || DEVICES[DEFAULT_DEVICE]; }
+
 /* ---------- .dtm 인코딩 ---------- */
-function toHex(g) {                       // g: H×W 0/1
-  const b = new Uint8Array(30 * 10);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+function toHex(g, device) {               // g: H×W 0/1, device: 'dotpad320'|'monarch480'
+  const sp = getSpec(device);
+  const b = new Uint8Array(sp.COLS * sp.ROWS);
+  for (let y = 0; y < sp.H; y++) for (let x = 0; x < sp.W; x++) {
     if (!g[y][x]) continue;
     const cc = x >> 1, side = x & 1, cr = y >> 2, r = y & 3;
-    const ci = cr * 30 + cc, bit = (side === 0 ? LEFT_BITS : RIGHT_BITS)[r];
+    const ci = cr * sp.COLS + cc, bit = (side === 0 ? LEFT_BITS : RIGHT_BITS)[r];
     b[ci] |= (1 << bit);
   }
   return Array.from(b, v => v.toString(16).padStart(2, '0')).join('');
@@ -388,39 +397,39 @@ function extractFeatures(ink, maxSize = 60) {
 }
 
 /* ---------- imageToGrid ---------- */
-function placeGrid(sub, margin) {
-  const g = zeros(H, W);
+function placeGrid(sub, margin, device) {
+  const sp = getSpec(device);
+  const g = zeros(sp.H, sp.W);
   // sub의 실제 콘텐츠 bounding box 계산
   let x0 = sub[0].length, y0 = sub.length, x1 = -1, y1 = -1;
   for (let y = 0; y < sub.length; y++) for (let x = 0; x < sub[0].length; x++)
     if (sub[y][x]) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
-  if (x1 < 0) return g;  // 빈 그리드
+  if (x1 < 0) return g;
   const cw = x1 - x0 + 1, ch = y1 - y0 + 1;
-  // 60×40 중앙에 배치 (margin 여백 확보)
-  const maxW = W - 2 * margin, maxH = H - 2 * margin;
-  // 콘텐츠가 maxW×maxH보다 크면 비율 유지 축소
+  const maxW = sp.W - 2 * margin, maxH = sp.H - 2 * margin;
   const scale = Math.min(1, maxW / cw, maxH / ch);
   const pw = Math.round(cw * scale), ph = Math.round(ch * scale);
-  const ox = Math.round((W - pw) / 2), oy = Math.round((H - ph) / 2);
+  const ox = Math.round((sp.W - pw) / 2), oy = Math.round((sp.H - ph) / 2);
   for (let dy = 0; dy < ph; dy++) for (let dx = 0; dx < pw; dx++) {
     const sx = x0 + Math.min(cw - 1, Math.floor(dx / scale));
     const sy = y0 + Math.min(ch - 1, Math.floor(dy / scale));
     if (sub[sy][sx]) { const gx = ox + dx, gy = oy + dy;
-      if (gx >= 0 && gx < W && gy >= 0 && gy < H) g[gy][gx] = 1; }
+      if (gx >= 0 && gx < sp.W && gy >= 0 && gy < sp.H) g[gy][gx] = 1; }
   }
   return g;
 }
-function imageToGrid(id, mode, margin = 2, holeFillMax = REF_HOLE_FILL_MAX, accentMax = REF_ACCENT_MAX) {
+function imageToGrid(id, mode, margin = 2, holeFillMax = REF_HOLE_FILL_MAX, accentMax = REF_ACCENT_MAX, device) {
+  const sp = getSpec(device);
   if (mode === 'rich') {
-    let sub = richSub(id, W - 2 * margin, H - 2 * margin, holeFillMax, accentMax);
-    if (sub === null) return imageToGrid(id, 'ref', margin, holeFillMax, accentMax);
+    let sub = richSub(id, sp.W - 2 * margin, sp.H - 2 * margin, holeFillMax, accentMax);
+    if (sub === null) return imageToGrid(id, 'ref', margin, holeFillMax, accentMax, device);
     sub = bridge4(sub); sub = dropSmall(sub, 3); sub = stripStray(sub);
     sub = legibility(sub); sub = bridge4(sub); sub = cleanup(sub);
-    return placeGrid(sub, margin);
+    return placeGrid(sub, margin, device);
   }
   const gray = toGray(id); autocontrast(gray, 1);
   const box = autocropBox(gray, 245);
-  const fit = grayFit(gray, box, W - 2 * margin, H - 2 * margin);
+  const fit = grayFit(gray, box, sp.W - 2 * margin, sp.H - 2 * margin);
   let sub;
   if (mode === 'ref') {
     // close1을 boundary 이후로 이동: 이진화 직후 팩장으로 외곽선이 두꺼워지는 문제 방지
@@ -456,37 +465,38 @@ function imageToGrid(id, mode, margin = 2, holeFillMax = REF_HOLE_FILL_MAX, acce
     sub = u;
   }
   sub = cleanup(sub);
-  return placeGrid(sub, margin);
+  return placeGrid(sub, margin, device);
 }
 
 /* ---------- 품질 & 유사도 ---------- */
 function gridMetrics(g) {
   const dots = sumAll(g);
-  const seen = zeros(H, W); let comps = 0;
-  for (let sy = 0; sy < H; sy++) for (let sx = 0; sx < W; sx++) {
+  const gH = g.length, gW = g[0].length;  // 실제 그리드 크기 사용 (디바이스에 독립적)
+  const seen = zeros(gH, gW); let comps = 0;
+  for (let sy = 0; sy < gH; sy++) for (let sx = 0; sx < gW; sx++) {
     if (!g[sy][sx] || seen[sy][sx]) continue; comps++;
     const st = [[sx, sy]]; seen[sy][sx] = 1;
     while (st.length) { const [x, y] = st.pop();
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
         const xx = x + dx, yy = y + dy;
-        if (xx >= 0 && xx < W && yy >= 0 && yy < H && g[yy][xx] && !seen[yy][xx]) { seen[yy][xx] = 1; st.push([xx, yy]); }
+        if (xx >= 0 && xx < gW && yy >= 0 && yy < gH && g[yy][xx] && !seen[yy][xx]) { seen[yy][xx] = 1; st.push([xx, yy]); }
       }
     }
   }
   let iso = 0;
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (g[y][x]) {
+  for (let y = 0; y < gH; y++) for (let x = 0; x < gW; x++) if (g[y][x]) {
     let has = false;
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const xx = x + dx, yy = y + dy; if (xx >= 0 && xx < W && yy >= 0 && yy < H && g[yy][xx]) has = true; }
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const xx = x + dx, yy = y + dy; if (xx >= 0 && xx < gW && yy >= 0 && yy < gH && g[yy][xx]) has = true; }
     if (!has) iso++;
   }
   const stray = strayCells(g).size;
   let clipped = 0;
-  for (let x = 0; x < W; x++) { clipped += g[0][x] + g[H - 1][x]; }
-  for (let y = 0; y < H; y++) { clipped += g[y][0] + g[y][W - 1]; }
+  for (let x = 0; x < gW; x++) { clipped += g[0][x] + g[gH - 1][x]; }
+  for (let y = 0; y < gH; y++) { clipped += g[y][0] + g[y][gW - 1]; }
   let congestion = 0;
-  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++)
+  for (let y = 1; y < gH - 1; y++) for (let x = 1; x < gW - 1; x++)
     if (!g[y][x] && ((g[y - 1][x] && g[y + 1][x]) || (g[y][x - 1] && g[y][x + 1]))) congestion++;
-  return { dots, coverage: dots / (W * H), components: comps, isolated: iso, stray, clipped, congestion };
+  return { dots, coverage: dots / (gW * gH), components: comps, isolated: iso, stray, clipped, congestion };
 }
 function qualityScore(m, t) {
   let s = 100;
@@ -501,21 +511,22 @@ function qualityScore(m, t) {
 }
 function gridStats(g) {
   const dots = sumAll(g);
+  const gH = g.length, gW = g[0].length;
   if (dots === 0) return { dots: 0, coverage: 0, solid_frac: 0, holes: 0, components: 0, bbox_fill: 0, density: 0 };
   let solid = 0;
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+  for (let y = 0; y < gH; y++) for (let x = 0; x < gW; x++) {
     if (!g[y][x]) continue; let n = 0;
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++)
-      if ((dx || dy) && x + dx >= 0 && x + dx < W && y + dy >= 0 && y + dy < H && g[y + dy][x + dx]) n++;
+      if ((dx || dy) && x + dx >= 0 && x + dx < gW && y + dy >= 0 && y + dy < gH && g[y + dy][x + dx]) n++;
     if (n >= 6) solid++;
   }
   const hz = holes(g).filter(c => c.length >= 3).length;
   const comps = components(g).length;
-  let x0 = W, y0 = H, x1 = -1, y1 = -1;
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (g[y][x]) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  let x0 = gW, y0 = gH, x1 = -1, y1 = -1;
+  for (let y = 0; y < gH; y++) for (let x = 0; x < gW; x++) if (g[y][x]) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
   const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
-  return { dots, coverage: dots / (W * H), solid_frac: solid / dots, holes: hz, components: comps,
-    bbox_fill: (bw * bh) / (W * H), density: dots / (bw * bh) };
+  return { dots, coverage: dots / (gW * gH), solid_frac: solid / dots, holes: hz, components: comps,
+    bbox_fill: (bw * bh) / (gW * gH), density: dots / (bw * bh) };
 }
 const LIKENESS_KEYS = { coverage: 1.0, solid_frac: 1.5, holes: 1.0, bbox_fill: 1.0, density: 1.0 };
 function refLikeness(g, profile) {
@@ -542,11 +553,11 @@ const MODE_TUNING = {
 /* ---------- convert_best (rich→ref→line) ---------- */
 const APP_TUNING = { modes_try: ['rich', 'thick_line', 'ref', 'line'], coverage_min: 0.05, coverage_max: 0.22,
   min_score: 55, ref_hole_fill_max: REF_HOLE_FILL_MAX, ref_accent_max: REF_ACCENT_MAX };
-function convertBest(id, profile, tuning = APP_TUNING) {
+function convertBest(id, profile, tuning = APP_TUNING, device) {
   const colorful = isColorful(id), cands = [];
   for (const mode of tuning.modes_try) {
     if (mode === 'rich' && !colorful) continue;
-    let g; try { g = imageToGrid(id, mode, 2, tuning.ref_hole_fill_max, tuning.ref_accent_max); } catch (e) { continue; }
+    let g; try { g = imageToGrid(id, mode, 2, tuning.ref_hole_fill_max, tuning.ref_accent_max, device); } catch (e) { continue; }
     // E: 모드별 품질 기준 적용
     const modeTuning = { ...tuning, ...(MODE_TUNING[mode] || {}) };
     const m = gridMetrics(g), s = qualityScore(m, modeTuning);
@@ -655,7 +666,8 @@ function _rgbToSaturation(r, g, b) {
   return max === 0 ? 0 : (max - min) / max;
 }
 
-function svgToGrid(svgText, margin = 2) {
+function svgToGrid(svgText, margin = 2, device) {
+  const sp = getSpec(device);
   // 1. DOM에 SVG 파싱
   const parser = new DOMParser();
   const doc = parser.parseFromString(svgText, 'image/svg+xml');
@@ -667,7 +679,7 @@ function svgToGrid(svgText, margin = 2) {
   const [vx, vy, vw, vh] = vb.length >= 4 ? vb : [0, 0, 24, 24];
 
   // 3. 오프스크린 SVG를 실제 DOM에 붙여 getPointAtLength 사용 가능하게
-  const gw = W - 2 * margin, gh = H - 2 * margin;
+  const gw = sp.W - 2 * margin, gh = sp.H - 2 * margin;
   const host = document.createElement('div');
   host.style.cssText = 'position:absolute;visibility:hidden;width:0;height:0;overflow:hidden';
   document.body.appendChild(host);
@@ -735,7 +747,7 @@ function svgToGrid(svgText, margin = 2) {
     if (feat[y][x]) u[y][x] = 1;
   u = bridge4(u); u = dropSmall(u, 3); u = stripStray(u); u = bridge4(u);
   u = cleanup(u);
-  return placeGrid(u, margin);
+  return placeGrid(u, margin, device);
 }
 
 function _fillPolygon(pts, grid, gw, gh) {
@@ -758,12 +770,13 @@ function _fillPolygon(pts, grid, gw, gh) {
 }
 
 /* ---------- I: hex → grid 헬퍼 (캐시 미리보기용) ---------- */
-function _hexToGrid(hex) {
+function _hexToGrid(hex, device) {
+  const sp = getSpec(device);
   const bytes = [];
   for (let i = 0; i < hex.length; i += 2) bytes.push(parseInt(hex.slice(i, i + 2), 16));
-  const g = Array.from({ length: H }, () => new Array(W).fill(0));
-  for (let cr = 0; cr < 10; cr++) for (let cc = 0; cc < 30; cc++) {
-    const b = bytes[cr * 30 + cc];
+  const g = Array.from({ length: sp.H }, () => new Array(sp.W).fill(0));
+  for (let cr = 0; cr < sp.ROWS; cr++) for (let cc = 0; cc < sp.COLS; cc++) {
+    const b = bytes[cr * sp.COLS + cc];
     for (let side = 0; side < 2; side++) {
       const bits = side === 0 ? LEFT_BITS : RIGHT_BITS;
       for (let r = 0; r < 4; r++) if (b & (1 << bits[r])) g[cr * 4 + r][cc * 2 + side] = 1;
@@ -773,11 +786,14 @@ function _hexToGrid(hex) {
 }
 
 /* ---------- 미리보기 (biocode 톤) ---------- */
-function previewDataURL(g, scale = 6, pad = 4) {
-  const c = document.createElement('canvas'); c.width = W * scale + pad * 2; c.height = H * scale + pad * 2;
+function previewDataURL(g, device, scale, pad = 4) {
+  const sp = getSpec(device);
+  // Monarch는 가로가 넓어서 scale 자동 조정 (canvas 최대 너비 900px 기준)
+  if (!scale) scale = sp.W === 96 ? 4 : 6;
+  const c = document.createElement('canvas'); c.width = sp.W * scale + pad * 2; c.height = sp.H * scale + pad * 2;
   const ctx = c.getContext('2d'); ctx.fillStyle = 'rgb(20,18,15)'; ctx.fillRect(0, 0, c.width, c.height);
-  const rOn = Math.max(2, (scale >> 1) - 1);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+  const rOn = Math.max(1, (scale >> 1) - 1);
+  for (let y = 0; y < sp.H; y++) for (let x = 0; x < sp.W; x++) {
     const cx = pad + x * scale + (scale >> 1), cy = pad + y * scale + (scale >> 1);
     ctx.beginPath();
     if (g[y][x]) { ctx.fillStyle = 'rgb(232,227,213)'; ctx.arc(cx, cy, rOn, 0, 7); }
@@ -788,7 +804,7 @@ function previewDataURL(g, scale = 6, pad = 4) {
 }
 
 /* ---------- 한 키워드 → 후보들 (앱이 호출) ---------- */
-async function generateCandidates(keyword, profile, onProgress) {
+async function generateCandidates(keyword, profile, onProgress, device) {
   const icons = await searchCandidates(keyword, 10);
   if (!icons.length) return { keyword, candidates: [], error: `'${keyword}' 아이콘을 찾지 못했어요. 영어 키워드를 권장합니다.` };
   // G: 카테고리별 프로파일
@@ -825,7 +841,7 @@ async function generateCandidates(keyword, profile, onProgress) {
         for (const row of cacheRows) {
           cachedIcons.add(row.icon_id);
           cachedResults.push({ icon: row.icon_id, mode: row.mode, score: row.score,
-            likeness: row.likeness, hex: row.hex, preview: previewDataURL(_hexToGrid(row.hex)) });
+            likeness: row.likeness, hex: row.hex, preview: previewDataURL(_hexToGrid(row.hex, device), device) });
         }
       }
     } catch(e) { /* 캐시 조회 실패 시 무시 */ }
@@ -842,7 +858,7 @@ async function generateCandidates(keyword, profile, onProgress) {
 
       // SVG 파싱 시도
       try {
-        const g = svgToGrid(svgText);
+        const g = svgToGrid(svgText, 2, device);
         if (g) {
           const m = gridMetrics(g);
           const svgTuning = { ...APP_TUNING, ...(MODE_TUNING.svg || {}) };
@@ -853,11 +869,13 @@ async function generateCandidates(keyword, profile, onProgress) {
 
       // 래스터 파이프라인
       try {
+        const sp = getSpec(device);
         const url = URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml' }));
         const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = url; });
         setTimeout(() => URL.revokeObjectURL(url), 0);
-        const id = rasterize(img, 480);
-        rasterBest = convertBest(id, activeProfile);
+        const rasterW = Math.max(480, sp.W * 8);  // Monarch는 더 큰 해상도로 래스터화
+        const id = rasterize(img, rasterW);
+        rasterBest = convertBest(id, activeProfile, APP_TUNING, device);
       } catch(e) {}
 
       // 앙상블: 둘 다 있으면 score 비교, 없으면 있는 것 사용
@@ -869,13 +887,14 @@ async function generateCandidates(keyword, profile, onProgress) {
       }
 
       if (!best) { failed++; continue; }
-      const hexStr = toHex(best.g);
+      const hexStr = toHex(best.g, device);
       out.push({ icon, mode: best.mode, score: best.s, likeness: best.likeness,
-        hex: hexStr, preview: previewDataURL(best.g) });
-      // I: 새로 변환된 결과를 icon_cache에 저장 (비동기)
+        hex: hexStr, preview: previewDataURL(best.g, device) });
+      // I: 새로 변환된 결과를 icon_cache에 저장 (비동기, 디바이스별로 구분)
       if (window._supabaseClient) {
+        const cacheKey = device && device !== DEFAULT_DEVICE ? `${icon}__${device}` : icon;
         window._supabaseClient.from('icon_cache').upsert({
-          icon_id: icon, hex: hexStr, mode: best.mode, score: best.s, likeness: best.likeness,
+          icon_id: cacheKey, hex: hexStr, mode: best.mode, score: best.s, likeness: best.likeness,
           updated_at: new Date().toISOString()
         }, { onConflict: 'icon_id' }).then(()=>{}).catch(()=>{});
       }
@@ -889,5 +908,5 @@ async function generateCandidates(keyword, profile, onProgress) {
     suggested_category: siteCategory(keyword), candidates: out, failed, allUploaded };
 }
 
-window.AutoTactile = { generateCandidates, categorize, siteCategory, SITE_CATEGORIES, W, H, toHex, APP_TUNING, PREFER_PREFIXES };
+window.AutoTactile = { generateCandidates, categorize, siteCategory, SITE_CATEGORIES, W, H, toHex, APP_TUNING, PREFER_PREFIXES, DEVICES, getSpec };
 })();

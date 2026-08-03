@@ -43,6 +43,8 @@
   .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(225px,1fr)); gap:12px; margin-top:20px; }
   .card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:10px; cursor:pointer; }
   .card.uploaded { opacity:0.5; }
+  .devBtn { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:5px 12px; color:var(--muted); cursor:pointer; font-size:13px; margin-right:6px; }
+  .devBtn.on { border-color:var(--cream); color:var(--cream); background:rgba(232,227,213,.08); }
   .card:hover { border-color:var(--muted); }
   .card.sel { border-color:var(--cream); }
   .card img { width:100%; border-radius:9px; display:block; }
@@ -113,6 +115,11 @@
   </div>
 
   <section class="hidden" id="genPanel">
+    <div class="row" style="margin-bottom:10px">
+      <span class="muted" style="font-size:13px;margin-right:8px" data-i18n="device">디바이스:</span>
+      <button class="devBtn on" id="devDotpad" data-dev="dotpad320">DotPad 320 <span class="muted" style="font-size:11px">60×40</span></button>
+      <button class="devBtn" id="devMonarch" data-dev="monarch480">Monarch 480 <span class="muted" style="font-size:11px">96×40</span></button>
+    </div>
     <div class="row">
       <input id="kw" data-i18n-ph="kw" placeholder="영어 키워드 (예: rabbit, guitar, ship)" style="width:320px">
       <button class="primary" id="genBtn" data-i18n="create">만들기</button>
@@ -185,6 +192,7 @@ function applyLang() {
 const AT = window.AutoTactile;
 let sb = null, cfg = null, profile = null, topics = {}, user = null;
 let basket = [], lastKw = '', lastCat = '기타';
+let currentDevice = 'dotpad320';  // 현재 선택된 디바이스
 const $ = id => document.getElementById(id);
 const show = (id, on = true) => $(id).classList.toggle('hidden', !on);
 
@@ -264,6 +272,16 @@ $('loginBtn').onclick = async () => {
 };
 $('logoutBtn').onclick = async () => { await sb.auth.signOut(); location.reload(); };
 
+// 디바이스 선택 토글
+document.querySelectorAll('.devBtn').forEach(btn => {
+  btn.onclick = () => {
+    currentDevice = btn.dataset.dev;
+    document.querySelectorAll('.devBtn').forEach(b => b.classList.toggle('on', b === btn));
+    $('cards').innerHTML = '';  // 이전 결과 지우기
+    $('genNote').textContent = '';
+  };
+});
+
 $('randBtn').onclick = () => {
   const raw = $('browseCat').value;
   const catKey = raw ? raw.replace(/\s*\(\d+\)$/, '') : null;
@@ -293,7 +311,7 @@ $('genBtn').onclick = async () => {
   const kw = $('kw').value.trim(); if (!kw) return;
   $('cards').innerHTML = ''; $('genNote').textContent = ''; show('genSpin'); $('genBtn').disabled = true; $('spinTxt').textContent = t('generating');
   try {
-    const res = await AT.generateCandidates(kw, profile, (i, n) => { $('spinTxt').textContent = `${t('generating')} ${i}/${n}`; });
+    const res = await AT.generateCandidates(kw, profile, (i, n) => { $('spinTxt').textContent = `${t('generating')} ${i}/${n}`; }, currentDevice);
     if (res.error) { $('genNote').textContent = res.error; return; }
     lastKw = kw; lastCat = res.suggested_category;
     if (!res.candidates.length) { $('genNote').textContent = t('noCand'); return; }
@@ -314,8 +332,10 @@ $('genBtn').onclick = async () => {
       if (c.alreadyUploaded) div.classList.add('uploaded');  // 이미 업로드된 아이콘 표시
       const lik = c.likeness == null ? '-' : c.likeness;
       const uploadedBadge = c.alreadyUploaded ? `<span class="b" style="background:var(--dim)">✓ 업로드됨</span>` : '';
+      const devSp = AT.getSpec(currentDevice);
+      const devBadge = `<span class="b" style="background:#1a2a3a;color:#7ab">${devSp.label}</span>`;
       div.innerHTML = `<img src="${c.preview}"><div class="badges">
-        <span class="b mode-${c.mode}">${c.mode}</span><span class="b">${t('score')} ${c.score}</span>
+        ${devBadge}<span class="b mode-${c.mode}">${c.mode}</span><span class="b">${t('score')} ${c.score}</span>
         <span class="b ${lik >= 85 ? 'lik-hi' : (lik < 78 ? 'lik-lo' : '')}">${t('likeness')} ${lik}</span>${uploadedBadge}</div>
         <div class="iconid">${c.icon}</div>`;
       div.onclick = () => {
@@ -326,7 +346,7 @@ $('genBtn').onclick = async () => {
           if (sb && user && !user._demo)
             sb.from('feedback_log').insert({ keyword: kw, icon: c.icon, mode: c.mode, score: c.score, likeness: c.likeness, action: 'rejected', user_id: user.id }).then(()=>{}).catch(()=>{});
         } else {
-          basket.push({ key: c.key, keyword: kw, hex: c.hex, preview: c.preview, mode: c.mode, likeness: c.likeness, title: res.suggested_title, cat: res.suggested_category, icon: c.icon }); div.classList.add('sel');
+          basket.push({ key: c.key, keyword: kw, hex: c.hex, preview: c.preview, mode: c.mode, likeness: c.likeness, title: res.suggested_title, cat: res.suggested_category, icon: c.icon, device: currentDevice }); div.classList.add('sel');
           // B: 선택 로깅
           if (sb && user && !user._demo)
             sb.from('feedback_log').insert({ keyword: kw, icon: c.icon, mode: c.mode, score: c.score, likeness: c.likeness, action: 'selected', user_id: user.id }).then(()=>{}).catch(()=>{});
@@ -354,7 +374,7 @@ $('pubBtn').onclick = async () => {
       const b = basket[i]; st.innerHTML = `<span class="spin"></span>${t('pubbing', i + 1, basket.length, b.title)}`;
       const tags = [...new Set([...(useAuto ? autoTagsFor(b) : []), ...common])].slice(0, 6);
       const { error } = await sb.from('graphics').insert({
-        title: b.title.trim() || (lang === 'ko' ? '제목 없는 그래픽' : 'Untitled'), category: b.cat, spec: '60×40', license: 'free', kind: 'graphic',
+        title: b.title.trim() || (lang === 'ko' ? '제목 없는 그래픽' : 'Untitled'), category: b.cat, spec: AT.getSpec(b.device).spec, license: 'free', kind: 'graphic',
         creator_name: name, creator_region: '🇰🇷 한국', creator_grad: 'linear-gradient(135deg,#16150F,#FF4F00)',
         tags, items: [{ label: '1쪽', data: b.hex, desc: '' }],
         icon_source: b.icon || null,
