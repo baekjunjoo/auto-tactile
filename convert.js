@@ -857,21 +857,8 @@ async function generateCandidates(keyword, profile, onProgress, device) {
     try {
       const svgText = await fetchIconSvg(icon);
 
-      // F: SVG 파싱 + 래스터 앙상블 — 둘 다 계산 후 더 높은 score 선택
-      let svgBest = null, rasterBest = null;
-
-      // SVG 파싱 시도
-      try {
-        const g = svgToGrid(svgText, 2, device);
-        if (g) {
-          const m = gridMetrics(g);
-          const svgTuning = { ...APP_TUNING, ...(MODE_TUNING.svg || {}) };
-          const s = qualityScore(m, svgTuning);
-          if (m.dots >= 60) svgBest = { g, mode: 'svg', s, m, likeness: refLikeness(g, activeProfile) };
-        }
-      } catch(e) {}
-
-      // 래스터 파이프라인
+      // 래스터 파이프라인 (안정적인 래스터 방식만 사용)
+      let best = null;
       try {
         const sp = getSpec(device);
         const url = URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml' }));
@@ -879,16 +866,8 @@ async function generateCandidates(keyword, profile, onProgress, device) {
         setTimeout(() => URL.revokeObjectURL(url), 0);
         const rasterW = Math.max(480, sp.W * 8);  // Monarch는 더 큰 해상도로 래스터화
         const id = rasterize(img, rasterW);
-        rasterBest = convertBest(id, activeProfile, APP_TUNING, device);
+        best = convertBest(id, activeProfile, APP_TUNING, device);
       } catch(e) {}
-
-      // 앙상블: 둘 다 있으면 score 비교, 없으면 있는 것 사용
-      let best = null;
-      if (svgBest && rasterBest) {
-        best = svgBest.s >= rasterBest.s ? svgBest : rasterBest;
-      } else {
-        best = svgBest || rasterBest;
-      }
 
       if (!best) { failed++; continue; }
       const hexStr = toHex(best.g, device);
